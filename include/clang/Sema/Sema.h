@@ -2456,7 +2456,8 @@ public:
                            ArrayRef<Expr *> Args, 
                            OverloadCandidateSet& CandidateSet,
                            bool IsAssignmentOperator = false,
-                           unsigned NumContextualBoolArguments = 0);
+                           unsigned NumContextualBoolArguments = 0,
+                           bool isRelationalOperator = false);
   void AddBuiltinOperatorCandidates(OverloadedOperatorKind Op,
                                     SourceLocation OpLoc, ArrayRef<Expr *> Args,
                                     OverloadCandidateSet& CandidateSet);

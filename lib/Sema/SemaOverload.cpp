@@ -4267,7 +4267,8 @@ static ImplicitConversionSequence
 TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
                  SourceLocation DeclLoc,
                  bool SuppressUserConversions,
-                 bool AllowExplicit) {
+                 bool AllowExplicit,
+	             bool AllowSlicing) {
   assert(DeclType->isReferenceType() && "Reference init needs a reference");
 
   // Most paths end in a failed conversion.
@@ -4310,6 +4311,33 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
     // Per C++ [over.ics.ref]p4, we don't check the bit-field property here.
     if (InitCategory.isLValue() &&
         RefRelationship >= Sema::Ref_Compatible_With_Added_Qualification) {
+
+		if (DerivedToBase && !AllowSlicing) {
+			// ban slicing, unless...
+			bool BenignSlicing = true;
+			// derived (T2)'s all non-static data members are inherited from B
+			// derived (T2) has no virtual member functions
+			// derived (T2) has no virtual bases
+			CXXRecordDecl *DerivedClassDecl = T2->getAsCXXRecordDecl()->getDefinition();
+
+			if (DerivedClassDecl->getNumVBases() > 0)
+				BenignSlicing = false;
+
+			if (DerivedClassDecl->isPolymorphic())
+				BenignSlicing = false;
+
+			for (const auto& Base : DerivedClassDecl->bases())
+			{
+				CXXRecordDecl *BaseClassDecl = Base.getType()->getAsCXXRecordDecl();
+				if (!BaseClassDecl->isEmpty() && !S.Context.hasSameUnqualifiedType(Base.getType(), T1)) {
+					BenignSlicing = false;
+				}
+			}
+
+			if (!BenignSlicing)
+				return ICS;
+		}
+
       // C++ [over.ics.ref]p1:
       //   When a parameter of reference type binds directly (8.5.3)
       //   to an argument expression, the implicit conversion sequence
@@ -4375,6 +4403,34 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
       (InitCategory.isXValue() ||
       (InitCategory.isPRValue() && (T2->isRecordType() || T2->isArrayType())) ||
       (InitCategory.isLValue() && T2->isFunctionType()))) {
+
+	  if (DerivedToBase && !AllowSlicing) {
+		  printf("***sz: derived-to-base reference ICS with non-lvalue rhs '%s' -> '%s', AllowSlicing = %d\n", T2.getAsString().c_str(), T1.getAsString().c_str(), AllowSlicing);
+		  // ban slicing, unless...
+		  bool BenignSlicing = true;
+		  // derived (T2)'s all non-static data members are inherited from B
+		  // derived (T2) has no virtual member functions
+		  // derived (T2) has no virtual bases
+		  CXXRecordDecl *DerivedClassDecl = T2->getAsCXXRecordDecl()->getDefinition();
+
+		  if (DerivedClassDecl->getNumVBases() > 0)
+			  BenignSlicing = false;
+
+		  if (DerivedClassDecl->isPolymorphic())
+			  BenignSlicing = false;
+
+		  for (const auto& Base : DerivedClassDecl->bases())
+		  {
+			  CXXRecordDecl *BaseClassDecl = Base.getType()->getAsCXXRecordDecl();
+			  if (!BaseClassDecl->isEmpty() && !S.Context.hasSameUnqualifiedType(Base.getType(), T1)) {
+				  BenignSlicing = false;
+			  }
+		  }
+
+		  if (!BenignSlicing)
+			  return ICS;
+	  }
+
     ICS.setStandard();
     ICS.Standard.First = ICK_Identity;
     ICS.Standard.Second = DerivedToBase? ICK_Derived_To_Base
@@ -4535,7 +4591,8 @@ TryCopyInitialization(Sema &S, Expr *From, QualType ToType,
                       bool SuppressUserConversions,
                       bool InOverloadResolution,
                       bool AllowObjCWritebackConversion,
-                      bool AllowExplicit = false);
+                      bool AllowExplicit = false,
+	                  bool AllowSlicing = true);
 
 /// TryListConversion - Try to copy-initialize a value of type ToType from the
 /// initializer list From.
@@ -4543,7 +4600,8 @@ static ImplicitConversionSequence
 TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
                   bool SuppressUserConversions,
                   bool InOverloadResolution,
-                  bool AllowObjCWritebackConversion) {
+                  bool AllowObjCWritebackConversion,
+	              bool AllowSlicing) {
   // C++11 [over.ics.list]p1:
   //   When an argument is an initializer list, it is not an expression and
   //   special rules apply for converting it to a parameter type.
@@ -4727,7 +4785,8 @@ TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
       if (RefRelationship >= Sema::Ref_Related) {
         return TryReferenceInit(S, Init, ToType, /*FIXME*/From->getLocStart(),
                                 SuppressUserConversions,
-                                /*AllowExplicit=*/false);
+                                /*AllowExplicit=*/false,
+			                    AllowSlicing);
       }
     }
 
@@ -4735,7 +4794,8 @@ TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
     // initializer list.
     Result = TryListConversion(S, From, T1, SuppressUserConversions,
                                InOverloadResolution,
-                               AllowObjCWritebackConversion);
+                               AllowObjCWritebackConversion,
+                               AllowSlicing);
     if (Result.isFailure())
       return Result;
     assert(!Result.isEllipsis() &&
@@ -4799,16 +4859,18 @@ TryCopyInitialization(Sema &S, Expr *From, QualType ToType,
                       bool SuppressUserConversions,
                       bool InOverloadResolution,
                       bool AllowObjCWritebackConversion,
-                      bool AllowExplicit) {
+                      bool AllowExplicit,
+	                  bool AllowSlicing) {
   if (InitListExpr *FromInitList = dyn_cast<InitListExpr>(From))
     return TryListConversion(S, FromInitList, ToType, SuppressUserConversions,
-                             InOverloadResolution,AllowObjCWritebackConversion);
+                             InOverloadResolution,AllowObjCWritebackConversion,AllowSlicing);
 
   if (ToType->isReferenceType())
     return TryReferenceInit(S, From, ToType,
                             /*FIXME:*/From->getLocStart(),
                             SuppressUserConversions,
-                            AllowExplicit);
+                            AllowExplicit,
+		                    AllowSlicing);
 
   return TryImplicitConversion(S, From, ToType,
                                SuppressUserConversions,
@@ -5526,8 +5588,7 @@ ExprResult Sema::PerformContextualImplicitConversion(
       Conversion = cast<CXXConversionDecl>(D);
 
     assert((!ConvTemplate || getLangOpts().CPlusPlus14) &&
-           "Conversion operator templates are considered potentially "
-           "viable in C++1y");
+           "Conversion operator templates are considered potentially viable in C++1y");
 
     QualType CurToType = Conversion->getConversionType().getNonReferenceType();
     if (Converter.match(CurToType) || ConvTemplate) {
@@ -5801,6 +5862,22 @@ Sema::AddOverloadCandidate(FunctionDecl *Function,
         return;
       }
 
+  bool AllowSlicing = true;
+  if (Constructor && Constructor->isCopyConstructor()) {
+	  AllowSlicing = false;
+  }
+  if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(Function)) {
+	  if (Method->isCopyAssignmentOperator()) {
+		  AllowSlicing = false;
+	  }
+  }
+  if (Function->isOverloadedOperator()) {
+	  OverloadedOperatorKind oo = Function->getOverloadedOperator();
+	  if (oo == OO_EqualEqual || oo == OO_ExclaimEqual || oo == OO_Less || oo == OO_LessEqual || oo == OO_Greater || oo == OO_GreaterEqual) {
+		  AllowSlicing = false;
+	  }
+  }
+
   // Determine the implicit conversion sequences for each of the
   // arguments.
   for (unsigned ArgIdx = 0; ArgIdx < Args.size(); ++ArgIdx) {
@@ -5816,7 +5893,8 @@ Sema::AddOverloadCandidate(FunctionDecl *Function,
                                 /*InOverloadResolution=*/true,
                                 /*AllowObjCWritebackConversion=*/
                                   getLangOpts().ObjCAutoRefCount,
-                                AllowExplicit);
+                                AllowExplicit,
+			                    AllowSlicing);
       if (Candidate.Conversions[ArgIdx].isBad()) {
         Candidate.Viable = false;
         Candidate.FailureKind = ovl_fail_bad_conversion;
@@ -6192,6 +6270,17 @@ Sema::AddMethodCandidate(CXXMethodDecl *Method, DeclAccessPair FoundDecl,
         return;
       }
 
+    bool AllowSlicing = true; // note: ctors don't get here
+  if (Method->isCopyAssignmentOperator()) {
+                 AllowSlicing = false;
+         }
+  if (Method->isOverloadedOperator()) {
+         OverloadedOperatorKind oo = Method->getOverloadedOperator();
+         if (oo == OO_EqualEqual || oo == OO_ExclaimEqual || oo == OO_Less || oo == OO_LessEqual || oo == OO_Greater || oo == OO_GreaterEqual) {
+                 AllowSlicing = false;
+         }
+   }
+
   // Determine the implicit conversion sequences for each of the
   // arguments.
   for (unsigned ArgIdx = 0; ArgIdx < Args.size(); ++ArgIdx) {
@@ -6206,7 +6295,8 @@ Sema::AddMethodCandidate(CXXMethodDecl *Method, DeclAccessPair FoundDecl,
                                 SuppressUserConversions,
                                 /*InOverloadResolution=*/true,
                                 /*AllowObjCWritebackConversion=*/
-                                  getLangOpts().ObjCAutoRefCount);
+                                  getLangOpts().ObjCAutoRefCount,
+                                /*AllowExplicit*/false, AllowSlicing);
       if (Candidate.Conversions[ArgIdx + 1].isBad()) {
         Candidate.Viable = false;
         Candidate.FailureKind = ovl_fail_bad_conversion;
@@ -6754,7 +6844,8 @@ void Sema::AddBuiltinCandidate(QualType ResultTy, QualType *ParamTys,
                                ArrayRef<Expr *> Args,
                                OverloadCandidateSet& CandidateSet,
                                bool IsAssignmentOperator,
-                               unsigned NumContextualBoolArguments) {
+                               unsigned NumContextualBoolArguments,
+	                           bool isRelationalOperator) {
   // Overload resolution is always an unevaluated context.
   EnterExpressionEvaluationContext Unevaluated(*this, Sema::Unevaluated);
 
@@ -6767,6 +6858,19 @@ void Sema::AddBuiltinCandidate(QualType ResultTy, QualType *ParamTys,
   Candidate.BuiltinTypes.ResultTy = ResultTy;
   for (unsigned ArgIdx = 0, N = Args.size(); ArgIdx != N; ++ArgIdx)
     Candidate.BuiltinTypes.ParamTypes[ArgIdx] = ParamTys[ArgIdx];
+
+  // For a relational or equality operator
+  // where both operands are of the same class type
+  //     // no user-defined conversions are applied to any of the operands
+  //       printf("***sz: adding a relational built-in overload\n");
+  //       printf("add builtin candidate(%s) type %s assign = %d numboolargs = %d relational = %d\n", ResultTy.getAsString().c_str(), ParamTys->getAsString().c_str(), IsAssignmentOperator, NumContextualBoolArguments, isRelationalOperator);
+  //       printf("paramtys '%s', '%s'\n", ParamTys[0].getAsString().c_str(), ParamTys[1].getAsString().c_str());
+  //       printf("args: '%s', '%s'\n", Args[0]->getType().getDesugaredType(Context).getUnqualifiedType().getAsString().c_str(), Args[1]->getType().getDesugaredType(Context).getUnqualifiedType().getAsString().c_str());
+  //}
+
+  bool isHomogeneousRelationalOperator = isRelationalOperator && Context.hasSameUnqualifiedType(Args[0]->getType(), Args[1]->getType());
+  //  if (isHomogeneousRelationalOperator)
+  //       printf("*** adding the built-in candidates for a homogeneous relational operator with arguments of type %s and %s\n", Args[0]->getType().getAsString().c_str(), Args[1]->getType().getAsString().c_str());
 
   // Determine the implicit conversion sequences for each of the
   // arguments.
@@ -6793,7 +6897,7 @@ void Sema::AddBuiltinCandidate(QualType ResultTy, QualType *ParamTys,
     } else {
       Candidate.Conversions[ArgIdx]
         = TryCopyInitialization(*this, Args[ArgIdx], ParamTys[ArgIdx],
-                                ArgIdx == 0 && IsAssignmentOperator,
+                                (ArgIdx == 0 && IsAssignmentOperator) || isHomogeneousRelationalOperator,
                                 /*InOverloadResolution=*/false,
                                 /*AllowObjCWritebackConversion=*/
                                   getLangOpts().ObjCAutoRefCount);
@@ -7544,7 +7648,7 @@ public:
           continue;
 
         QualType ParamTypes[2] = { *MemPtr, *MemPtr };
-        S.AddBuiltinCandidate(S.Context.BoolTy, ParamTypes, Args, CandidateSet);
+        S.AddBuiltinCandidate(S.Context.BoolTy, ParamTypes, Args, CandidateSet, false, 0, /*isRelational=*/ true);
       }
     }
   }
@@ -7619,7 +7723,7 @@ public:
           continue;
 
         QualType ParamTypes[2] = { *Ptr, *Ptr };
-        S.AddBuiltinCandidate(S.Context.BoolTy, ParamTypes, Args, CandidateSet);
+        S.AddBuiltinCandidate(S.Context.BoolTy, ParamTypes, Args, CandidateSet, false, 0, true);
       }
       for (BuiltinCandidateTypeSet::iterator
                 Enum = CandidateTypes[ArgIdx].enumeration_begin(),
@@ -7635,7 +7739,7 @@ public:
           continue;
 
         QualType ParamTypes[2] = { *Enum, *Enum };
-        S.AddBuiltinCandidate(S.Context.BoolTy, ParamTypes, Args, CandidateSet);
+        S.AddBuiltinCandidate(S.Context.BoolTy, ParamTypes, Args, CandidateSet, false, 0, true);
       }
       
       if (CandidateTypes[ArgIdx].hasNullPtrType()) {
@@ -7645,7 +7749,7 @@ public:
                                                              NullPtrTy))) {
           QualType ParamTypes[2] = { NullPtrTy, NullPtrTy };
           S.AddBuiltinCandidate(S.Context.BoolTy, ParamTypes, Args,
-                                CandidateSet);
+                                CandidateSet, false, 0, true);
         }
       }
     }
@@ -7746,7 +7850,7 @@ public:
         QualType Result =
           isComparison ? S.Context.BoolTy
                        : getUsualArithmeticConversions(Left, Right);
-        S.AddBuiltinCandidate(Result, LandR, Args, CandidateSet);
+        S.AddBuiltinCandidate(Result, LandR, Args, CandidateSet, false, 0, isComparison);
       }
     }
 
@@ -9316,8 +9420,7 @@ static TemplateDecl *getDescribedTemplate(Decl *Templated) {
   else if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Templated))
     return RD->getDescribedClassTemplate();
 
-  llvm_unreachable("Unsupported: Getting the described template declaration"
-                   " for bad deduction diagnosis");
+  llvm_unreachable("Unsupported: Getting the described template declaration for bad deduction diagnosis");
 }
 
 /// Diagnose a failed template-argument deduction.
@@ -11558,7 +11661,8 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
   // If either side is type-dependent, create an appropriate dependent
   // expression.
   if (Args[0]->isTypeDependent() || Args[1]->isTypeDependent()) {
-    if (Fns.empty()) {
+	  printf("sz: CreateOverloadedBinOp for a type-dependent argument expression\n");
+	  if (Fns.empty()) {
       // If there are no functions to store, just build a dependent
       // BinaryOperator or CompoundAssignment.
       if (Opc <= BO_Assign || Opc > BO_OrAssign)
@@ -11745,6 +11849,13 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
       //   built-in operator and interpreted according to clause 5.
       if (Opc == BO_Comma)
         break;
+
+	  if (Opc == BO_EQ || Opc == BO_NE || Opc == BO_LE || Opc == BO_GE || Opc == BO_LT || Opc == BO_GT) {
+		  printf("sz: CreateOverloadedBinOp found no viable function, and this is an equality/relational op\n");
+		  if (Args[0]->getType()->isRecordType() && Context.hasSameUnqualifiedType(Args[0]->getType(), Args[1]->getType())) {
+			  printf("sz: this  is a homogeneous equality/relational op for class type %s\n", Args[0]->getType().getDesugaredType(Context).getUnqualifiedType().getAsString().c_str());
+		  }
+	  }
 
       // For class as left operand for assignment or compound assigment
       // operator do not fall through to handling in built-in, but report that
