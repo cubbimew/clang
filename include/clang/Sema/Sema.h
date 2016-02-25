@@ -4433,6 +4433,10 @@ public:
   void DefineImplicitMoveConstructor(SourceLocation CurrentLocation,
                                      CXXConstructorDecl *Constructor);
 
+
+  FunctionDecl *DeclareImplicitEqualityOperator(CXXRecordDecl *ClassDecl, OverloadedOperatorKind Op);
+  void DefineImplicitEqualityOperator(SourceLocation CurrentLocation, FunctionDecl *MethodDecl, OverloadedOperatorKind Op);
+
   /// \brief Declare the implicit copy assignment operator for the given class.
   ///
   /// \param ClassDecl The class declaration into which the implicit

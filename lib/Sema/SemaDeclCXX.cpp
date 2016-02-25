@@ -10052,6 +10052,52 @@ Sema::ComputeDefaultedCopyAssignmentExceptionSpec(CXXMethodDecl *MD) {
   return ExceptSpec;
 }
 
+FunctionDecl *Sema::DeclareImplicitEqualityOperator(CXXRecordDecl *ClassDecl, OverloadedOperatorKind Op) {
+	printf("sz: declaring the implicit equality operator now...\n");
+
+	SmallVector<QualType, 2> ArgTypes;
+	for (int n = 0; n < 2; ++n) {
+		QualType ArgType = Context.getTypeDeclType(ClassDecl).withConst();
+		ArgType = Context.getLValueReferenceType(ArgType);
+		ArgTypes.push_back(ArgType);
+	}
+	QualType RetType = Context.BoolTy;
+
+	DeclarationName Name = Context.DeclarationNames.getCXXOperatorName(Op);
+	printf("going to declare '%s' with argtype '%s' and return '%s'\n", Name.getAsString().c_str(), ArgTypes[0].getAsString().c_str(), RetType.getAsString().c_str());
+	SourceLocation ClassLoc = ClassDecl->getLocation();
+	DeclarationNameInfo NameInfo(Name, ClassLoc);
+
+	FunctionDecl* FDecl = FunctionDecl::Create(Context, ClassDecl, ClassLoc, NameInfo, QualType(),
+		/*TypeSourceInfo=*/nullptr, /*StorageClass=*/SC_None,
+		/*isInline=*/true, /*hasWrittenPrototype*/false, /*isconstexpr*/false);
+	FDecl->setObjectOfFriendDecl();
+	FDecl->setImplicit();
+
+	FunctionProtoType::ExtProtoInfo EPI;
+	FDecl->setType(Context.getFunctionType(RetType, ArgTypes, EPI));
+
+	// Add the parameter to the operator.
+	SmallVector<ParmVarDecl *, 2> ParamDecls;
+	for (int n = 0; n < 2; ++n) {
+		ParmVarDecl *FromParam = ParmVarDecl::Create(Context, FDecl,
+			ClassLoc, ClassLoc,
+			/*Id=*/nullptr, ArgTypes[n],
+			/*TInfo=*/nullptr, SC_None,
+			nullptr);
+		ParamDecls.push_back(FromParam);
+	}
+	FDecl->setParams(ParamDecls);
+
+	TypeSourceInfo *TSI = Context.CreateTypeSourceInfo(FDecl->getType());
+	FriendDecl *Friend = FriendDecl::Create(Context, ClassDecl, ClassLoc, FDecl, ClassLoc);
+	Friend->setAccess(AS_public);
+
+	ClassDecl->addDecl(Friend);
+
+	return FDecl;
+}
+
 CXXMethodDecl *Sema::DeclareImplicitCopyAssignment(CXXRecordDecl *ClassDecl) {
   // Note: The following rules are largely analoguous to the copy
   // constructor rules. Note that virtual bases are not taken into account
@@ -10175,6 +10221,249 @@ static void diagnoseDeprecatedCopyOperation(Sema &S, CXXMethodDecl *CopyOp,
                                           : Sema::CXXCopyAssignment)
       << RD;
   }
+}
+
+void Sema::DefineImplicitEqualityOperator(SourceLocation CurrentLocation, FunctionDecl *equalityOperator, OverloadedOperatorKind Op) {
+	printf("***sz: defining a %s\n", equalityOperator->getNameAsString().c_str());
+
+	ParmVarDecl *PVDecl = equalityOperator->getParamDecl(0);// ->getType()->getAsCXXRecordDecl();
+//	printf("**8sz: pvdecl is %s\n", PVDecl->getQualifiedNameAsString().c_str());
+	QualType qt = PVDecl->getType();
+//	printf("**8sz: pvdecl's type is %s\n", qt.getAsString().c_str());
+	CXXRecordDecl *ClassDecl = qt.getNonReferenceType()->getAsCXXRecordDecl();
+//	printf("**8sz: cxxrecord decl type is %s\n", ClassDecl->getQualifiedNameAsString().c_str());
+
+	ParmVarDecl *Left = equalityOperator->getParamDecl(0);
+	ParmVarDecl *Right = equalityOperator->getParamDecl(1);
+	Qualifiers RightQuals = Right->getType().getQualifiers();
+	Qualifiers LeftQuals = Left->getType().getQualifiers();
+	QualType RightRefType = Right->getType();
+	QualType LeftRefType = Left->getType();
+	// TODO assert that the params are const refs to the same class type
+	if (const LValueReferenceType *RightRef = RightRefType->getAs<LValueReferenceType>()) {
+		RightRefType = RightRef->getPointeeType();
+		RightQuals = RightRefType.getQualifiers();
+	}
+	if (const LValueReferenceType *LeftRef = LeftRefType->getAs<LValueReferenceType>()) {
+		LeftRefType = LeftRef->getPointeeType();
+		LeftQuals = LeftRefType.getQualifiers();
+	}
+
+	equalityOperator->markUsed(Context);
+	SynthesizedFunctionScope Scope(*this, equalityOperator);
+	SmallVector<Stmt*, 8> Statements;
+
+	// Our location for everything implicitly-generated.
+	SourceLocation Loc = equalityOperator->getLocEnd().isValid()
+		? equalityOperator->getLocEnd()
+		: equalityOperator->getLocation();
+	// Builds a DeclRefExpr for the "other" object.
+	RefBuilder RightRef(Right, RightRefType);
+	RefBuilder LeftRef(Left, LeftRefType);
+
+	// Compare base classes.
+	bool Invalid = false;
+	for (auto &Base : ClassDecl->bases()) {
+		// TODO form the comparison
+		// Form the assignment:
+		//   static_cast<Base*>(this)->Base::operator=(static_cast<Base&>(other));
+//		QualType BaseType = Base.getType().getUnqualifiedType();
+//		if (!BaseType->isRecordType()) {
+//			Invalid = true;
+//			continue;
+//		}
+//
+//		CXXCastPath BasePath;
+//		BasePath.push_back(&Base);
+
+		// Construct the "from" expression, which is an implicit cast to the
+		// appropriately-qualified base type.
+//		CastBuilder From(OtherRef, Context.getQualifiedType(BaseType, OtherQuals), VK_LValue, BasePath);
+
+		// Dereference "this".
+//		DerefBuilder DerefThis(This);
+//		CastBuilder To(DerefThis,
+//			Context.getCVRQualifiedType(
+//				BaseType, CopyAssignOperator->getTypeQualifiers()),
+//			VK_LValue, BasePath);
+
+		// Build the copy.
+//		StmtResult Copy = buildSingleCopyAssign(*this, Loc, BaseType,
+//			To, From,
+//			/*CopyingBaseSubobject=*/true,
+//			/*Copying=*/true);
+//		if (Copy.isInvalid()) {
+//			Diag(CurrentLocation, diag::note_member_synthesized_at)
+//				<< CXXCopyAssignment << Context.getTagDeclType(ClassDecl);
+//			CopyAssignOperator->setInvalidDecl();
+//			return;
+//		}
+//
+//		// Success! Record the copy.
+//		Statements.push_back(Copy.getAs<Expr>());
+	}
+
+	std::vector<ExprResult> eResults;
+
+	// Assign non-static members.
+	for (auto *Field : ClassDecl->fields()) {
+		printf("building comparison for direct member %s\n", Field->getNameAsString().c_str());
+//		if (Field->isUnnamedBitfield() || Field->getParent()->isUnion())
+//			continue;
+//
+//		if (Field->isInvalidDecl()) {
+//			Invalid = true;
+//			continue;
+//		}
+//
+//		// Check for members of reference type; we can't copy those.
+//		if (Field->getType()->isReferenceType()) {
+//			Diag(ClassDecl->getLocation(), diag::err_uninitialized_member_for_assign)
+//				<< Context.getTagDeclType(ClassDecl) << 0 << Field->getDeclName();
+//			Diag(Field->getLocation(), diag::note_declared_at);
+//			Diag(CurrentLocation, diag::note_member_synthesized_at)
+//				<< CXXCopyAssignment << Context.getTagDeclType(ClassDecl);
+//			Invalid = true;
+//			continue;
+//		}
+//
+//		// Check for members of const-qualified, non-class type.
+//		QualType BaseType = Context.getBaseElementType(Field->getType());
+//		if (!BaseType->getAs<RecordType>() && BaseType.isConstQualified()) {
+//			Diag(ClassDecl->getLocation(), diag::err_uninitialized_member_for_assign)
+//				<< Context.getTagDeclType(ClassDecl) << 1 << Field->getDeclName();
+//			Diag(Field->getLocation(), diag::note_declared_at);
+//			Diag(CurrentLocation, diag::note_member_synthesized_at)
+//				<< CXXCopyAssignment << Context.getTagDeclType(ClassDecl);
+//			Invalid = true;
+//			continue;
+//		}
+//
+//		// Suppress assigning zero-width bitfields.
+//		if (Field->isBitField() && Field->getBitWidthValue(Context) == 0)
+//			continue;
+//
+//		QualType FieldType = Field->getType().getNonReferenceType();
+//		if (FieldType->isIncompleteArrayType()) {
+//			assert(ClassDecl->hasFlexibleArrayMember() &&
+//				"Incomplete array type is not valid");
+//			continue;
+//		}
+//
+		// Build references to the field in the object we're copying from and to.
+		CXXScopeSpec SS; // Intentionally empty
+		LookupResult MemberLookup(*this, Field->getDeclName(), Loc, LookupMemberName);
+		MemberLookup.addDecl(Field);
+		MemberLookup.resolveKind();
+
+		MemberBuilder RightMemberBuilder(RightRef, RightRefType, /*IsArrow=*/false, MemberLookup);
+		MemberBuilder LeftMemberBuilder(LeftRef, LeftRefType, /*IsArrow=*/false, MemberLookup);
+		StmtResult SR;
+
+		// for members of class type...
+		if (const RecordType *RecordTy = Field->getType()->getAs<RecordType>()) {
+			CXXRecordDecl *ClassDecl = cast<CXXRecordDecl>(RecordTy->getDecl());
+			printf("this is a class, lookingfor appropriate operator==\n");
+			// Look for operator==
+			DeclarationName Name = Context.DeclarationNames.getCXXOperatorName(OO_EqualEqual);
+			LookupResult OpLookup(*this, Name, Loc, Sema::LookupOrdinaryName);
+			LookupQualifiedName(OpLookup, ClassDecl, false);
+
+			for (const auto& ol : OpLookup) {
+				printf("sz: lookup found op== %s\n", ol->getNameAsString().c_str());
+			}
+
+//			CXXScopeSpec SS;
+//			const Type *CanonicalT = Context.getCanonicalType(Field->getType().getTypePtr());
+//			SS.MakeTrivial(Context, NestedNameSpecifier::Create(Context, nullptr, false, CanonicalT), Loc);
+
+			// TODO switch on whether it is a memberdecl or just functiondecl
+			// Create the reference to operator==.
+//			ExprResult OpEqualEqualRef
+//				= S.BuildMemberReferenceExpr(To.build(S, Loc), T, Loc, /*isArrow=*/false,
+//					SS, /*TemplateKWLoc=*/SourceLocation(),
+//					/*FirstQualifierInScope=*/nullptr,
+//					OpLookup,
+//					/*TemplateArgs=*/nullptr, /*S*/nullptr,
+//					/*SuppressQualifierCheck=*/true);
+//			if (OpEqualRef.isInvalid())
+//				return StmtError();
+
+			// Build the call to the assignment operator.
+
+//			Expr *FromInst = From.build(S, Loc);
+//			ExprResult Call = S.BuildCallToMemberFunction(/*Scope=*/nullptr,
+//				OpEqualRef.getAs<Expr>(),
+//				Loc, FromInst, Loc);
+			UnresolvedSet<16> Functions;
+			LookupOverloadedOperatorName(OO_EqualEqual, nullptr/*TODO: check scope*/,
+					Field->getType(), Field->getType(), Functions);
+			for (const auto& ol : Functions) {
+				printf("sz: LookupOverlaodedOperatorName %s\n", ol->getNameAsString().c_str());
+			}
+
+			ExprResult Comparison = CreateOverloadedBinOp(Loc,
+				BO_EQ,
+				Functions,
+				LeftMemberBuilder.build(*this, Loc), RightMemberBuilder.build(*this, Loc));
+
+			// TODO result of == has to be contextually converted to bool
+			eResults.push_back(Comparison);
+		}
+		else
+		{
+			const ConstantArrayType *ArrayTy = Context.getAsConstantArrayType(Field->getType());
+			if (!ArrayTy) {
+				ExprResult Comparison = CreateBuiltinBinOp(Loc, BO_EQ, LeftMemberBuilder.build(*this, Loc), RightMemberBuilder.build(*this, Loc));
+//				if (Comparison.isInvalid())
+//					return StmtError();
+				printf("created builtin binop . invalid? %d\n", Comparison.isInvalid());
+//				SR = ActOnExprStmt(Comparison);
+				eResults.push_back(Comparison);
+			}
+		}
+//		// Build the copy of this field.
+//		StmtResult Copy = buildSingleCopyAssign(*this, Loc, FieldType,
+//			To, From,
+//			/*CopyingBaseSubobject=*/false,
+//			/*Copying=*/true);
+//		if (Copy.isInvalid()) {
+//			Diag(CurrentLocation, diag::note_member_synthesized_at)
+//				<< CXXCopyAssignment << Context.getTagDeclType(ClassDecl);
+//			CopyAssignOperator->setInvalidDecl();
+//			return;
+//		}
+//
+
+//		// Success! Record the copy.
+//		Statements.push_back(SR.getAs<Stmt>());
+	}
+
+
+	// true && member1==member1 && member2==member2 ...
+	ExprResult root = new(Context) CXXBoolLiteralExpr(true, Context.BoolTy, Loc);
+	for (int n = 0; n < eResults.size(); ++n) {
+		root = CreateBuiltinBinOp(Loc, BO_LAnd, root.get(), eResults[n].get());
+	}
+	if (Op == OO_ExclaimEqual) {
+		root = CreateBuiltinUnaryOp(Loc, UO_LNot, root.get());
+	}
+	StmtResult Return = BuildReturnStmt(Loc, root.get());
+    Statements.push_back(Return.getAs<Stmt>());
+
+	ResolveExceptionSpec(CurrentLocation, equalityOperator->getType()->castAs<FunctionProtoType>());
+	StmtResult Body;
+	{
+		CompoundScopeRAII CompoundScope(*this);
+		Body = ActOnCompoundStmt(Loc, Loc, Statements, /*isStmtExpr=*/false);
+		assert(!Body.isInvalid() && "Compound statement creation cannot fail");
+	}
+	equalityOperator->setBody(Body.getAs<Stmt>());
+
+	if (ASTMutationListener *L = getASTMutationListener()) {
+		L->CompletedImplicitDefinition(equalityOperator);
+	}
+
 }
 
 void Sema::DefineImplicitCopyAssignment(SourceLocation CurrentLocation,

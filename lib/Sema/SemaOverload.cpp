@@ -11643,7 +11643,7 @@ Sema::CreateOverloadedUnaryOp(SourceLocation OpLoc, UnaryOperatorKind Opc,
 /// set based on the context using, e.g.,
 /// LookupOverloadedOperatorName() and ArgumentDependentLookup(). This
 /// set should not contain any member functions; those will be added
-/// by CreateOverloadedBinOp().
+/// by CreateOverloadedBinOp(). 
 ///
 /// \param LHS Left-hand argument.
 /// \param RHS Right-hand argument.
@@ -11853,8 +11853,65 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
 	  if (Opc == BO_EQ || Opc == BO_NE || Opc == BO_LE || Opc == BO_GE || Opc == BO_LT || Opc == BO_GT) {
 		  printf("sz: CreateOverloadedBinOp found no viable function, and this is an equality/relational op\n");
 		  if (Args[0]->getType()->isRecordType() && Context.hasSameUnqualifiedType(Args[0]->getType(), Args[1]->getType())) {
+			  //if (Class->needsImplicitMoveConstructor())
+				  FunctionDecl *opDecl = DeclareImplicitEqualityOperator(Args[0]->getType()->getAsCXXRecordDecl(), Op); 
 			  printf("sz: this  is a homogeneous equality/relational op for class type %s\n", Args[0]->getType().getDesugaredType(Context).getUnqualifiedType().getAsString().c_str());
+			  DefineImplicitEqualityOperator(OpLoc, opDecl, Op);
+
+
+				  // We matched an overloaded operator. Build a call to that
+				  // operator.
+					  ExprResult Arg0 = PerformCopyInitialization(
+						  InitializedEntity::InitializeParameter(Context,
+							  opDecl->getParamDecl(0)),
+						  SourceLocation(), Args[0]);
+					  if (Arg0.isInvalid())
+						  return ExprError();
+
+					  ExprResult Arg1 =
+						  PerformCopyInitialization(
+							  InitializedEntity::InitializeParameter(Context,
+								  opDecl->getParamDecl(1)),
+							  SourceLocation(), Args[1]);
+					  if (Arg1.isInvalid())
+						  return ExprError();
+					  Args[0] = LHS = Arg0.getAs<Expr>();
+					  Args[1] = RHS = Arg1.getAs<Expr>();
+
+					  
+					  // Build the actual expression node.
+				  ExprResult FnExpr = CreateFunctionRefExpr(*this, opDecl,
+					  opDecl,
+					  false, OpLoc);
+				  if (FnExpr.isInvalid())
+					  return ExprError();
+
+
+				  // Determine the result type.
+				  QualType ResultTy = opDecl->getReturnType();
+				  ExprValueKind VK = Expr::getValueKindForType(ResultTy);
+				  ResultTy = ResultTy.getNonLValueExprType(Context);
+
+
+				  CXXOperatorCallExpr *TheCall =
+					  new (Context) CXXOperatorCallExpr(Context, Op, FnExpr.get(),
+						  Args, ResultTy, VK, OpLoc,
+						  FPFeatures.fp_contract);
+
+				  if (CheckCallReturnType(opDecl->getReturnType(), OpLoc, TheCall,
+					  opDecl))
+					  return ExprError();
+
+				  ArrayRef<const Expr *> ArgsArray(Args, 2);
+
+				  checkCall(opDecl, nullptr, ArgsArray, isa<CXXMethodDecl>(opDecl), OpLoc,
+					  TheCall->getSourceRange(), VariadicDoesNotApply);
+
+				  ExprResult done = MaybeBindToTemporary(TheCall);
+				  printf("sz done\n");
+				  return done;
 		  }
+
 	  }
 
       // For class as left operand for assignment or compound assigment
