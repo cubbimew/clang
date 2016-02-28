@@ -11853,7 +11853,7 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
 	  if (Opc == BO_EQ || Opc == BO_NE || Opc == BO_LE || Opc == BO_GE || Opc == BO_LT || Opc == BO_GT) {
 		  printf("sz: CreateOverloadedBinOp found no viable function, and this is an equality/relational op\n");
 		  if (Args[0]->getType()->isRecordType() && Context.hasSameUnqualifiedType(Args[0]->getType(), Args[1]->getType())) {
-			  //if (Class->needsImplicitMoveConstructor())
+			  //TODO if (Class->needsImplicitMoveConstructor())
 				  FunctionDecl *opDecl = DeclareImplicitEqualityOperator(Args[0]->getType()->getAsCXXRecordDecl(), Op); 
 			  printf("sz: this  is a homogeneous equality/relational op for class type %s\n", Args[0]->getType().getDesugaredType(Context).getUnqualifiedType().getAsString().c_str());
 			  DefineImplicitEqualityOperator(OpLoc, opDecl, Op);

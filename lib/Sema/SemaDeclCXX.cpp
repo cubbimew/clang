@@ -10,7 +10,7 @@
 //  This file implements semantic analysis for C++ declarations.
 //
 //===----------------------------------------------------------------------===//
-
+#include <numeric>
 #include "clang/Sema/SemaInternal.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
@@ -10223,9 +10223,198 @@ static void diagnoseDeprecatedCopyOperation(Sema &S, CXXMethodDecl *CopyOp,
   }
 }
 
-void Sema::DefineImplicitEqualityOperator(SourceLocation CurrentLocation, FunctionDecl *equalityOperator, OverloadedOperatorKind Op) {
-	printf("***sz: defining a %s\n", equalityOperator->getNameAsString().c_str());
+static void compareMembersRecursive(Sema& S, SourceLocation Loc, CXXRecordDecl* ClassDecl,
+									ExprBuilder& LeftBuilder, ExprBuilder& RightBuilder,
+									QualType LeftType, QualType RightType,
+									std::vector<ExprResult>& eResults) {
 
+	for (auto &Base : ClassDecl->bases()) {
+		QualType BaseType = Base.getType().getUnqualifiedType();
+		CXXRecordDecl *ClassDecl = BaseType->getAsCXXRecordDecl();
+		CXXCastPath BasePath;
+		BasePath.push_back(&Base);
+		Qualifiers RightQuals = RightType.getQualifiers();
+		Qualifiers LeftQuals = LeftType.getQualifiers();
+		QualType LeftType = S.Context.getQualifiedType(BaseType, LeftQuals);
+		QualType RightType = S.Context.getQualifiedType(BaseType, RightQuals);
+		CastBuilder Left(LeftBuilder, LeftType, VK_LValue, BasePath);
+		CastBuilder Right(RightBuilder, RightType, VK_LValue, BasePath);
+		compareMembersRecursive(S, Loc, ClassDecl, Left, Right, LeftType, RightType, eResults);
+	}
+
+
+	for (auto *Field : ClassDecl->fields()) {
+		printf("building comparison for direct member %s\n", Field->getNameAsString().c_str());
+		//		if (Field->isUnnamedBitfield() || Field->getParent()->isUnion())
+		//			continue;
+		//
+		//		if (Field->isInvalidDecl()) {
+		//			Invalid = true;
+		//			continue;
+		//		}
+		//
+		//		// Check for members of reference type; we can't copy those.
+		//		if (Field->getType()->isReferenceType()) {
+		//			Diag(ClassDecl->getLocation(), diag::err_uninitialized_member_for_assign)
+		//				<< Context.getTagDeclType(ClassDecl) << 0 << Field->getDeclName();
+		//			Diag(Field->getLocation(), diag::note_declared_at);
+		//			Diag(CurrentLocation, diag::note_member_synthesized_at)
+		//				<< CXXCopyAssignment << Context.getTagDeclType(ClassDecl);
+		//			Invalid = true;
+		//			continue;
+		//		}
+		//
+		//		// Check for members of const-qualified, non-class type.
+		//		QualType BaseType = Context.getBaseElementType(Field->getType());
+		//		if (!BaseType->getAs<RecordType>() && BaseType.isConstQualified()) {
+		//			Diag(ClassDecl->getLocation(), diag::err_uninitialized_member_for_assign)
+		//				<< Context.getTagDeclType(ClassDecl) << 1 << Field->getDeclName();
+		//			Diag(Field->getLocation(), diag::note_declared_at);
+		//			Diag(CurrentLocation, diag::note_member_synthesized_at)
+		//				<< CXXCopyAssignment << Context.getTagDeclType(ClassDecl);
+		//			Invalid = true;
+		//			continue;
+		//		}
+		//
+		//		// Suppress assigning zero-width bitfields.
+		//		if (Field->isBitField() && Field->getBitWidthValue(Context) == 0)
+		//			continue;
+		//
+		//		QualType FieldType = Field->getType().getNonReferenceType();
+		//		if (FieldType->isIncompleteArrayType()) {
+		//			assert(ClassDecl->hasFlexibleArrayMember() &&
+		//				"Incomplete array type is not valid");
+		//			continue;
+		//		}
+		//
+		// Build references to the field in the object we're copying from and to.
+		CXXScopeSpec SS; // Intentionally empty
+		LookupResult MemberLookup(S, Field->getDeclName(), Loc, S.LookupMemberName);
+		MemberLookup.addDecl(Field);
+		MemberLookup.resolveKind();
+		MemberBuilder RightMemberBuilder(RightBuilder, RightType, /*IsArrow=*/false, MemberLookup);
+		MemberBuilder LeftMemberBuilder(LeftBuilder, LeftType, /*IsArrow=*/false, MemberLookup);
+		StmtResult SR;
+
+		// for members of class type...
+		if (const RecordType *RecordTy = Field->getType()->getAs<RecordType>()) {
+			CXXRecordDecl *ClassDecl = cast<CXXRecordDecl>(RecordTy->getDecl());
+			printf("this is a class, lookingfor appropriate operator==\n");
+			// Look for operator==
+			DeclarationName Name = S.Context.DeclarationNames.getCXXOperatorName(OO_EqualEqual);
+			LookupResult OpLookup(S, Name, Loc, Sema::LookupOrdinaryName);
+			S.LookupQualifiedName(OpLookup, ClassDecl, false);
+
+			for (const auto& ol : OpLookup) {
+				printf("sz: lookup found op== %s\n", ol->getNameAsString().c_str());
+			}
+
+			//			CXXScopeSpec SS;
+			//			const Type *CanonicalT = Context.getCanonicalType(Field->getType().getTypePtr());
+			//			SS.MakeTrivial(Context, NestedNameSpecifier::Create(Context, nullptr, false, CanonicalT), Loc);
+
+			// TODO switch on whether it is a memberdecl or just functiondecl
+			// Create the reference to operator==.
+			//			ExprResult OpEqualEqualRef
+			//				= S.BuildMemberReferenceExpr(To.build(S, Loc), T, Loc, /*isArrow=*/false,
+			//					SS, /*TemplateKWLoc=*/SourceLocation(),
+			//					/*FirstQualifierInScope=*/nullptr,
+			//					OpLookup,
+			//					/*TemplateArgs=*/nullptr, /*S*/nullptr,
+			//					/*SuppressQualifierCheck=*/true);
+			//			if (OpEqualRef.isInvalid())
+			//				return StmtError();
+
+			// Build the call to the assignment operator.
+
+			//			Expr *FromInst = From.build(S, Loc);
+			//			ExprResult Call = S.BuildCallToMemberFunction(/*Scope=*/nullptr,
+			//				OpEqualRef.getAs<Expr>(),
+			//				Loc, FromInst, Loc);
+			UnresolvedSet<16> Functions;
+			S.LookupOverloadedOperatorName(OO_EqualEqual, nullptr/*TODO: check scope*/,
+				Field->getType(), Field->getType(), Functions);
+			for (const auto& ol : Functions) {
+				printf("sz: LookupOverlaodedOperatorName %s\n", ol->getNameAsString().c_str());
+			}
+
+			ExprResult Comparison = S.CreateOverloadedBinOp(Loc,
+				BO_EQ,
+				Functions,
+				LeftMemberBuilder.build(S, Loc), RightMemberBuilder.build(S, Loc));
+
+			// TODO result of == has to be contextually converted to bool
+			eResults.push_back(Comparison);
+		}
+		else
+		{
+			if (const ConstantArrayType *ArrayTy = S.Context.getAsConstantArrayType(Field->getType())) {
+				std::vector<llvm::APInt> sizes;
+				sizes.push_back(ArrayTy->getSize());
+				while (const ConstantArrayType *ElementTy = S.Context.getAsConstantArrayType(ArrayTy->getElementType()))
+				{
+					sizes.push_back(ElementTy->getSize());
+					ArrayTy = ElementTy;
+					printf("added size %d\n", ElementTy->getSize().getLimitedValue(INT_MAX));
+				}
+
+				llvm::APInt zero = sizes[0];
+				zero.clearAllBits();
+				llvm::APInt max = std::accumulate(sizes.begin() + 1, sizes.end(), *sizes.begin(), std::multiplies<llvm::APInt>{});
+				//				printf("max value is %d\n", max.getLimitedValue(INT_MAX));
+				for (llvm::APInt offset = zero; offset != max; offset++) {
+					//					printf("processing array at offset %d\n", offset.getLimitedValue(INT_MAX));
+					Expr* right = RightMemberBuilder.build(S, Loc);
+					Expr* left = LeftMemberBuilder.build(S, Loc);
+					for (auto& sz : sizes) {
+						ExprResult RightSub = S.CreateBuiltinArraySubscriptExpr(right, Loc, IntegerLiteral::Create(S.Context, zero, S.Context.getSizeType(), Loc), Loc);
+						ExprResult LeftSub = S.CreateBuiltinArraySubscriptExpr(left, Loc, IntegerLiteral::Create(S.Context, zero, S.Context.getSizeType(), Loc), Loc);
+						right = RightSub.get();
+						left = LeftSub.get();
+					}
+					ExprResult RightPtr = S.CreateBuiltinUnaryOp(Loc, UO_AddrOf, right);
+					ExprResult LeftPtr = S.CreateBuiltinUnaryOp(Loc, UO_AddrOf, left);
+					ExprResult RightSum = S.CreateBuiltinBinOp(Loc, BO_Add, RightPtr.get(), IntegerLiteral::Create(S.Context, offset, S.Context.getSizeType(), Loc));
+					ExprResult LeftSum = S.CreateBuiltinBinOp(Loc, BO_Add, LeftPtr.get(), IntegerLiteral::Create(S.Context, offset, S.Context.getSizeType(), Loc));
+					ExprResult RightValue = S.CreateBuiltinUnaryOp(Loc, UO_Deref, RightSum.get());
+					ExprResult LeftValue = S.CreateBuiltinUnaryOp(Loc, UO_Deref, LeftSum.get());
+					ExprResult Comparison = S.CreateBuiltinBinOp(Loc, BO_EQ, RightValue.get(), LeftValue.get());
+					eResults.push_back(Comparison);
+				}
+
+				//				QualType elementType = ArrayTy->getElementType();
+				//				llvm::APInt sz = ArrayTy->getSize();
+
+				//				do {
+				//					sz--;
+				// TODO handle nested arrays (recursive ExprResult compare function)
+
+				//					ExprResult RightSub = CreateBuiltinArraySubscriptExpr(RightMemberBuilder.build(*this, Loc), Loc, IntegerLiteral::Create(Context, sz, Context.getSizeType(), Loc), Loc);
+				//					ExprResult LeftSub = CreateBuiltinArraySubscriptExpr(LeftMemberBuilder.build(*this, Loc), Loc, IntegerLiteral::Create(Context, sz, Context.getSizeType(), Loc), Loc);
+
+				// TODO account for classes, too
+				//				if (Comparison.isInvalid())
+				//					return StmtError();
+				//				} while (sz.isStrictlyPositive());
+			}
+			else {
+				ExprResult Comparison = S.CreateBuiltinBinOp(Loc, BO_EQ, LeftMemberBuilder.build(S, Loc), RightMemberBuilder.build(S, Loc));
+				//				if (Comparison.isInvalid())
+				//					return StmtError();
+				eResults.push_back(Comparison);
+			}
+		}
+		//		if (Copy.isInvalid()) {
+		//			Diag(CurrentLocation, diag::note_member_synthesized_at)
+		//				<< CXXCopyAssignment << Context.getTagDeclType(ClassDecl);
+		//			CopyAssignOperator->setInvalidDecl();
+		//			return;
+		//		}
+	}
+
+}
+
+void Sema::DefineImplicitEqualityOperator(SourceLocation CurrentLocation, FunctionDecl *equalityOperator, OverloadedOperatorKind Op) {
 	ParmVarDecl *PVDecl = equalityOperator->getParamDecl(0);// ->getType()->getAsCXXRecordDecl();
 //	printf("**8sz: pvdecl is %s\n", PVDecl->getQualifiedNameAsString().c_str());
 	QualType qt = PVDecl->getType();
@@ -10261,24 +10450,29 @@ void Sema::DefineImplicitEqualityOperator(SourceLocation CurrentLocation, Functi
 	RefBuilder RightRef(Right, RightRefType);
 	RefBuilder LeftRef(Left, LeftRefType);
 
+	std::vector<ExprResult> eResults;
+
 	// Compare base classes.
 	bool Invalid = false;
 	for (auto &Base : ClassDecl->bases()) {
-		// TODO form the comparison
-		// Form the assignment:
-		//   static_cast<Base*>(this)->Base::operator=(static_cast<Base&>(other));
-//		QualType BaseType = Base.getType().getUnqualifiedType();
-//		if (!BaseType->isRecordType()) {
-//			Invalid = true;
-//			continue;
-//		}
-//
-//		CXXCastPath BasePath;
-//		BasePath.push_back(&Base);
+		QualType BaseType = Base.getType().getUnqualifiedType();
+		CXXRecordDecl *ClassDecl = BaseType->getAsCXXRecordDecl();
+		//		if (!BaseType->isRecordType()) {
+		//			Invalid = true;
+		//			continue;
+		//}
+//		buildImplicitComparisonRecursive(*this, Base, eResults);
 
-		// Construct the "from" expression, which is an implicit cast to the
-		// appropriately-qualified base type.
-//		CastBuilder From(OtherRef, Context.getQualifiedType(BaseType, OtherQuals), VK_LValue, BasePath);
+		//   static_cast<Base*>(this)->Base::operator=(static_cast<Base&>(other));
+		CXXCastPath BasePath;
+		BasePath.push_back(&Base);
+
+		QualType LeftType = Context.getQualifiedType(BaseType, LeftQuals);
+		QualType RightType = Context.getQualifiedType(BaseType, RightQuals);
+		CastBuilder Left(LeftRef, LeftType, VK_LValue, BasePath);
+		CastBuilder Right(RightRef, RightType, VK_LValue, BasePath);
+
+		compareMembersRecursive(*this, Loc, ClassDecl, Left, Right, LeftType, RightType, eResults);
 
 		// Dereference "this".
 //		DerefBuilder DerefThis(This);
@@ -10303,144 +10497,91 @@ void Sema::DefineImplicitEqualityOperator(SourceLocation CurrentLocation, Functi
 //		Statements.push_back(Copy.getAs<Expr>());
 	}
 
-	std::vector<ExprResult> eResults;
 
 	// Assign non-static members.
-	for (auto *Field : ClassDecl->fields()) {
-		printf("building comparison for direct member %s\n", Field->getNameAsString().c_str());
-//		if (Field->isUnnamedBitfield() || Field->getParent()->isUnion())
-//			continue;
+	compareMembersRecursive(*this, Loc, ClassDecl, LeftRef, RightRef, LeftRefType, RightRefType, eResults);
+
+//or (auto *Field : ClassDecl->fields()) {
+//printf("building comparison for direct member %s\n", Field->getNameAsString().c_str());
+//// Build references to the field in the object we're copying from and to.
+//CXXScopeSpec SS; // Intentionally empty
+//LookupResult MemberLookup(*this, Field->getDeclName(), Loc, LookupMemberName);
+//MemberLookup.addDecl(Field);
+//		MemberLookup.resolveKind();
+//		MemberBuilder RightMemberBuilder(RightRef, RightRefType, /*IsArrow=*/false, MemberLookup);
+//		MemberBuilder LeftMemberBuilder(LeftRef, LeftRefType, /*IsArrow=*/false, MemberLookup);
+//		StmtResult SR;
 //
-//		if (Field->isInvalidDecl()) {
-//			Invalid = true;
-//			continue;
+//		// for members of class type...
+//		if (const RecordType *RecordTy = Field->getType()->getAs<RecordType>()) {
+//			CXXRecordDecl *ClassDecl = cast<CXXRecordDecl>(RecordTy->getDecl());
+//			printf("this is a class, lookingfor appropriate operator==\n");
+//			// Look for operator==
+//			DeclarationName Name = Context.DeclarationNames.getCXXOperatorName(OO_EqualEqual);
+//			LookupResult OpLookup(*this, Name, Loc, Sema::LookupOrdinaryName);
+//			LookupQualifiedName(OpLookup, ClassDecl, false);
+//
+//			for (const auto& ol : OpLookup) {
+//				printf("sz: lookup found op== %s\n", ol->getNameAsString().c_str());
+//			}
+
+//			UnresolvedSet<16> Functions;
+//			LookupOverloadedOperatorName(OO_EqualEqual, nullptr/*TODO: check scope*/,
+//					Field->getType(), Field->getType(), Functions);
+//			for (const auto& ol : Functions) {
+//				printf("sz: LookupOverlaodedOperatorName %s\n", ol->getNameAsString().c_str());
+//			}
+//
+//			ExprResult Comparison = CreateOverloadedBinOp(Loc,
+//				BO_EQ,
+//				Functions,
+//				LeftMemberBuilder.build(*this, Loc), RightMemberBuilder.build(*this, Loc));
+//
+//			// TODO result of == has to be contextually converted to bool
+//			eResults.push_back(Comparison);
 //		}
+//		else
+//		{
+//			if (const ConstantArrayType *ArrayTy = Context.getAsConstantArrayType(Field->getType())) {
+//				std::vector<llvm::APInt> sizes;
+//				sizes.push_back(ArrayTy->getSize());
+//				while(const ConstantArrayType *ElementTy = Context.getAsConstantArrayType(ArrayTy->getElementType()))
+//				{
+//					sizes.push_back(ElementTy->getSize());
+//					ArrayTy = ElementTy;
+//					printf("added size %d\n", ElementTy->getSize().getLimitedValue(INT_MAX));
+//				}
 //
-//		// Check for members of reference type; we can't copy those.
-//		if (Field->getType()->isReferenceType()) {
-//			Diag(ClassDecl->getLocation(), diag::err_uninitialized_member_for_assign)
-//				<< Context.getTagDeclType(ClassDecl) << 0 << Field->getDeclName();
-//			Diag(Field->getLocation(), diag::note_declared_at);
-//			Diag(CurrentLocation, diag::note_member_synthesized_at)
-//				<< CXXCopyAssignment << Context.getTagDeclType(ClassDecl);
-//			Invalid = true;
-//			continue;
+//				llvm::APInt zero = sizes[0];
+//				zero.clearAllBits();
+///				llvm::APInt max = std::accumulate(sizes.begin()+1, sizes.end(), *sizes.begin(), std::multiplies<llvm::APInt>{});
+////				printf("max value is %d\n", max.getLimitedValue(INT_MAX));
+//				for (llvm::APInt offset = zero; offset != max; offset++) {
+////					printf("processing array at offset %d\n", offset.getLimitedValue(INT_MAX));
+//					Expr* right = RightMemberBuilder.build(*this, Loc);
+//					Expr* left = LeftMemberBuilder.build(*this, Loc);
+//					for (auto& sz : sizes) {
+//						ExprResult RightSub = CreateBuiltinArraySubscriptExpr(right, Loc, IntegerLiteral::Create(Context, zero, Context.getSizeType(), Loc), Loc);
+//						ExprResult LeftSub = CreateBuiltinArraySubscriptExpr(left, Loc, IntegerLiteral::Create(Context, zero, Context.getSizeType(), Loc), Loc);
+//						right = RightSub.get();
+//						left = LeftSub.get();
+//					}
+//					ExprResult RightPtr = CreateBuiltinUnaryOp(Loc, UO_AddrOf, right);
+//					ExprResult LeftPtr = CreateBuiltinUnaryOp(Loc, UO_AddrOf, left);
+//					ExprResult RightSum = CreateBuiltinBinOp(Loc, BO_Add, RightPtr.get(), IntegerLiteral::Create(Context, offset, Context.getSizeType(), Loc));
+//					ExprResult LeftSum = CreateBuiltinBinOp(Loc, BO_Add, LeftPtr.get(), IntegerLiteral::Create(Context, offset, Context.getSizeType(), Loc));
+//					ExprResult RightValue = CreateBuiltinUnaryOp(Loc, UO_Deref, RightSum.get());
+//					ExprResult LeftValue = CreateBuiltinUnaryOp(Loc, UO_Deref, LeftSum.get());
+//					ExprResult Comparison = CreateBuiltinBinOp(Loc, BO_EQ, RightValue.get(), LeftValue.get());
+//					eResults.push_back(Comparison);
+//				}
+//			} else {
+//				ExprResult Comparison = CreateBuiltinBinOp(Loc, BO_EQ, LeftMemberBuilder.build(*this, Loc), RightMemberBuilder.build(*this, Loc));
+//				eResults.push_back(Comparison);
+//			}
 //		}
-//
-//		// Check for members of const-qualified, non-class type.
-//		QualType BaseType = Context.getBaseElementType(Field->getType());
-//		if (!BaseType->getAs<RecordType>() && BaseType.isConstQualified()) {
-//			Diag(ClassDecl->getLocation(), diag::err_uninitialized_member_for_assign)
-//				<< Context.getTagDeclType(ClassDecl) << 1 << Field->getDeclName();
-//			Diag(Field->getLocation(), diag::note_declared_at);
-//			Diag(CurrentLocation, diag::note_member_synthesized_at)
-//				<< CXXCopyAssignment << Context.getTagDeclType(ClassDecl);
-//			Invalid = true;
-//			continue;
-//		}
-//
-//		// Suppress assigning zero-width bitfields.
-//		if (Field->isBitField() && Field->getBitWidthValue(Context) == 0)
-//			continue;
-//
-//		QualType FieldType = Field->getType().getNonReferenceType();
-//		if (FieldType->isIncompleteArrayType()) {
-//			assert(ClassDecl->hasFlexibleArrayMember() &&
-//				"Incomplete array type is not valid");
-//			continue;
-//		}
-//
-		// Build references to the field in the object we're copying from and to.
-		CXXScopeSpec SS; // Intentionally empty
-		LookupResult MemberLookup(*this, Field->getDeclName(), Loc, LookupMemberName);
-		MemberLookup.addDecl(Field);
-		MemberLookup.resolveKind();
-
-		MemberBuilder RightMemberBuilder(RightRef, RightRefType, /*IsArrow=*/false, MemberLookup);
-		MemberBuilder LeftMemberBuilder(LeftRef, LeftRefType, /*IsArrow=*/false, MemberLookup);
-		StmtResult SR;
-
-		// for members of class type...
-		if (const RecordType *RecordTy = Field->getType()->getAs<RecordType>()) {
-			CXXRecordDecl *ClassDecl = cast<CXXRecordDecl>(RecordTy->getDecl());
-			printf("this is a class, lookingfor appropriate operator==\n");
-			// Look for operator==
-			DeclarationName Name = Context.DeclarationNames.getCXXOperatorName(OO_EqualEqual);
-			LookupResult OpLookup(*this, Name, Loc, Sema::LookupOrdinaryName);
-			LookupQualifiedName(OpLookup, ClassDecl, false);
-
-			for (const auto& ol : OpLookup) {
-				printf("sz: lookup found op== %s\n", ol->getNameAsString().c_str());
-			}
-
-//			CXXScopeSpec SS;
-//			const Type *CanonicalT = Context.getCanonicalType(Field->getType().getTypePtr());
-//			SS.MakeTrivial(Context, NestedNameSpecifier::Create(Context, nullptr, false, CanonicalT), Loc);
-
-			// TODO switch on whether it is a memberdecl or just functiondecl
-			// Create the reference to operator==.
-//			ExprResult OpEqualEqualRef
-//				= S.BuildMemberReferenceExpr(To.build(S, Loc), T, Loc, /*isArrow=*/false,
-//					SS, /*TemplateKWLoc=*/SourceLocation(),
-//					/*FirstQualifierInScope=*/nullptr,
-//					OpLookup,
-//					/*TemplateArgs=*/nullptr, /*S*/nullptr,
-//					/*SuppressQualifierCheck=*/true);
-//			if (OpEqualRef.isInvalid())
-//				return StmtError();
-
-			// Build the call to the assignment operator.
-
-//			Expr *FromInst = From.build(S, Loc);
-//			ExprResult Call = S.BuildCallToMemberFunction(/*Scope=*/nullptr,
-//				OpEqualRef.getAs<Expr>(),
-//				Loc, FromInst, Loc);
-			UnresolvedSet<16> Functions;
-			LookupOverloadedOperatorName(OO_EqualEqual, nullptr/*TODO: check scope*/,
-					Field->getType(), Field->getType(), Functions);
-			for (const auto& ol : Functions) {
-				printf("sz: LookupOverlaodedOperatorName %s\n", ol->getNameAsString().c_str());
-			}
-
-			ExprResult Comparison = CreateOverloadedBinOp(Loc,
-				BO_EQ,
-				Functions,
-				LeftMemberBuilder.build(*this, Loc), RightMemberBuilder.build(*this, Loc));
-
-			// TODO result of == has to be contextually converted to bool
-			eResults.push_back(Comparison);
-		}
-		else
-		{
-			const ConstantArrayType *ArrayTy = Context.getAsConstantArrayType(Field->getType());
-			if (!ArrayTy) {
-				ExprResult Comparison = CreateBuiltinBinOp(Loc, BO_EQ, LeftMemberBuilder.build(*this, Loc), RightMemberBuilder.build(*this, Loc));
-//				if (Comparison.isInvalid())
-//					return StmtError();
-				printf("created builtin binop . invalid? %d\n", Comparison.isInvalid());
-//				SR = ActOnExprStmt(Comparison);
-				eResults.push_back(Comparison);
-			}
-		}
-//		// Build the copy of this field.
-//		StmtResult Copy = buildSingleCopyAssign(*this, Loc, FieldType,
-//			To, From,
-//			/*CopyingBaseSubobject=*/false,
-//			/*Copying=*/true);
-//		if (Copy.isInvalid()) {
-//			Diag(CurrentLocation, diag::note_member_synthesized_at)
-//				<< CXXCopyAssignment << Context.getTagDeclType(ClassDecl);
-//			CopyAssignOperator->setInvalidDecl();
-//			return;
-//		}
-//
-
-//		// Success! Record the copy.
-//		Statements.push_back(SR.getAs<Stmt>());
-	}
-
-
-	// true && member1==member1 && member2==member2 ...
+//	}
+	
 	ExprResult root = new(Context) CXXBoolLiteralExpr(true, Context.BoolTy, Loc);
 	for (int n = 0; n < eResults.size(); ++n) {
 		root = CreateBuiltinBinOp(Loc, BO_LAnd, root.get(), eResults[n].get());
