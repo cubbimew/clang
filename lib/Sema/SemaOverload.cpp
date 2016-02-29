@@ -4270,7 +4270,8 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
                  bool AllowExplicit,
 	             bool AllowSlicing) {
   assert(DeclType->isReferenceType() && "Reference init needs a reference");
-
+  printf("sz: tryreferenceinit, decltype is %s init's type is %s  allowslicing = %d\n",
+	  DeclType.getAsString().c_str(), Init->getType().getAsString().c_str(), AllowSlicing); 
   // Most paths end in a failed conversion.
   ImplicitConversionSequence ICS;
   ICS.setBad(BadConversionSequence::no_conversion, Init, DeclType);
@@ -4311,7 +4312,7 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
     // Per C++ [over.ics.ref]p4, we don't check the bit-field property here.
     if (InitCategory.isLValue() &&
         RefRelationship >= Sema::Ref_Compatible_With_Added_Qualification) {
-
+		printf("sz: refcompatible non-rvalue ref. DerivedToBase = %d AllowSlicing = %d\n", DerivedToBase, AllowSlicing);
 		if (DerivedToBase && !AllowSlicing) {
 			// ban slicing, unless...
 			bool BenignSlicing = true;
@@ -4326,6 +4327,9 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
 			if (DerivedClassDecl->isPolymorphic())
 				BenignSlicing = false;
 
+			if (!DerivedClassDecl->field_empty())
+				BenignSlicing = false;
+
 			for (const auto& Base : DerivedClassDecl->bases())
 			{
 				CXXRecordDecl *BaseClassDecl = Base.getType()->getAsCXXRecordDecl();
@@ -4334,6 +4338,7 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
 				}
 			}
 
+			printf("sz: BenignSlicing = %d\n", BenignSlicing);
 			if (!BenignSlicing)
 				return ICS;
 		}
@@ -4417,6 +4422,9 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
 			  BenignSlicing = false;
 
 		  if (DerivedClassDecl->isPolymorphic())
+			  BenignSlicing = false;
+
+		  if (!DerivedClassDecl->field_empty())
 			  BenignSlicing = false;
 
 		  for (const auto& Base : DerivedClassDecl->bases())
@@ -4783,6 +4791,7 @@ TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
                                          dummy2, dummy3);
 
       if (RefRelationship >= Sema::Ref_Related) {
+		  printf("refinit in copyinit 2\n");
         return TryReferenceInit(S, Init, ToType, /*FIXME*/From->getLocStart(),
                                 SuppressUserConversions,
                                 /*AllowExplicit=*/false,
@@ -4865,13 +4874,14 @@ TryCopyInitialization(Sema &S, Expr *From, QualType ToType,
     return TryListConversion(S, FromInitList, ToType, SuppressUserConversions,
                              InOverloadResolution,AllowObjCWritebackConversion,AllowSlicing);
 
-  if (ToType->isReferenceType())
-    return TryReferenceInit(S, From, ToType,
-                            /*FIXME:*/From->getLocStart(),
-                            SuppressUserConversions,
-                            AllowExplicit,
-		                    AllowSlicing);
-
+  if (ToType->isReferenceType()) {
+	  printf("sz: refinit in copyinit\n");
+	  return TryReferenceInit(S, From, ToType,
+		  /*FIXME:*/From->getLocStart(),
+		  SuppressUserConversions,
+		  AllowExplicit,
+		  AllowSlicing);
+  }
   return TryImplicitConversion(S, From, ToType,
                                SuppressUserConversions,
                                /*AllowExplicit=*/false,
