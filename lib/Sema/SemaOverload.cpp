@@ -4270,8 +4270,8 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
                  bool AllowExplicit,
 	             bool AllowSlicing) {
   assert(DeclType->isReferenceType() && "Reference init needs a reference");
-  printf("sz: tryreferenceinit, decltype is %s init's type is %s  allowslicing = %d\n",
-	  DeclType.getAsString().c_str(), Init->getType().getAsString().c_str(), AllowSlicing); 
+//  printf("sz: tryreferenceinit, decltype is %s init's type is %s  allowslicing = %d\n",
+//	  DeclType.getAsString().c_str(), Init->getType().getAsString().c_str(), AllowSlicing); 
   // Most paths end in a failed conversion.
   ImplicitConversionSequence ICS;
   ICS.setBad(BadConversionSequence::no_conversion, Init, DeclType);
@@ -4312,7 +4312,7 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
     // Per C++ [over.ics.ref]p4, we don't check the bit-field property here.
     if (InitCategory.isLValue() &&
         RefRelationship >= Sema::Ref_Compatible_With_Added_Qualification) {
-		printf("sz: refcompatible non-rvalue ref. DerivedToBase = %d AllowSlicing = %d\n", DerivedToBase, AllowSlicing);
+//		printf("sz: refcompatible non-rvalue ref. DerivedToBase = %d AllowSlicing = %d\n", DerivedToBase, AllowSlicing);
 		if (DerivedToBase && !AllowSlicing) {
 			// ban slicing, unless...
 			bool BenignSlicing = true;
@@ -4338,7 +4338,7 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
 				}
 			}
 
-			printf("sz: BenignSlicing = %d\n", BenignSlicing);
+//			printf("sz: BenignSlicing = %d\n", BenignSlicing);
 			if (!BenignSlicing)
 				return ICS;
 		}
@@ -4410,7 +4410,7 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
       (InitCategory.isLValue() && T2->isFunctionType()))) {
 
 	  if (DerivedToBase && !AllowSlicing) {
-		  printf("***sz: derived-to-base reference ICS with non-lvalue rhs '%s' -> '%s', AllowSlicing = %d\n", T2.getAsString().c_str(), T1.getAsString().c_str(), AllowSlicing);
+//		  printf("***sz: derived-to-base reference ICS with non-lvalue rhs '%s' -> '%s', AllowSlicing = %d\n", T2.getAsString().c_str(), T1.getAsString().c_str(), AllowSlicing);
 		  // ban slicing, unless...
 		  bool BenignSlicing = true;
 		  // derived (T2)'s all non-static data members are inherited from B
@@ -4791,7 +4791,7 @@ TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
                                          dummy2, dummy3);
 
       if (RefRelationship >= Sema::Ref_Related) {
-		  printf("refinit in copyinit 2\n");
+//		  printf("refinit in copyinit 2\n");
         return TryReferenceInit(S, Init, ToType, /*FIXME*/From->getLocStart(),
                                 SuppressUserConversions,
                                 /*AllowExplicit=*/false,
@@ -4875,7 +4875,7 @@ TryCopyInitialization(Sema &S, Expr *From, QualType ToType,
                              InOverloadResolution,AllowObjCWritebackConversion,AllowSlicing);
 
   if (ToType->isReferenceType()) {
-	  printf("sz: refinit in copyinit\n");
+//	  printf("sz: refinit in copyinit\n");
 	  return TryReferenceInit(S, From, ToType,
 		  /*FIXME:*/From->getLocStart(),
 		  SuppressUserConversions,
@@ -11671,7 +11671,7 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
   // If either side is type-dependent, create an appropriate dependent
   // expression.
   if (Args[0]->isTypeDependent() || Args[1]->isTypeDependent()) {
-	  printf("sz: CreateOverloadedBinOp for a type-dependent argument expression\n");
+//	  printf("sz: CreateOverloadedBinOp for a type-dependent argument expression\n");
 	  if (Fns.empty()) {
       // If there are no functions to store, just build a dependent
       // BinaryOperator or CompoundAssignment.
@@ -11860,12 +11860,16 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
       if (Opc == BO_Comma)
         break;
 
-	  if (Opc == BO_EQ || Opc == BO_NE || Opc == BO_LE || Opc == BO_GE || Opc == BO_LT || Opc == BO_GT) {
-		  printf("sz: CreateOverloadedBinOp found no viable function, and this is an equality/relational op\n");
+//	  printf("note; candidate set holds...\n");
+//	  for (OverloadCandidate& x : CandidateSet) {
+//		  printf("%s\n", x.FoundDecl.getDecl()->getNameAsString().c_str());
+//	  }
+	  if (CandidateSet.size() == 0 /* TODO only if the signatures are similar? */ && (Opc == BO_EQ || Opc == BO_NE || Opc == BO_LE || Opc == BO_GE || Opc == BO_LT || Opc == BO_GT)) {
+//		  printf("sz: CreateOverloadedBinOp found no viable function, and this is an equality/relational op\n");
 		  if (Args[0]->getType()->isRecordType() && Context.hasSameUnqualifiedType(Args[0]->getType(), Args[1]->getType())) {
-			  //TODO if (Class->needsImplicitMoveConstructor())
+			  //TODO don't redeclare:: if (Class->needsImplicitMoveConstructor())
 				  FunctionDecl *opDecl = DeclareImplicitEqualityOperator(Args[0]->getType()->getAsCXXRecordDecl(), Op); 
-			  printf("sz: this  is a homogeneous equality/relational op for class type %s\n", Args[0]->getType().getDesugaredType(Context).getUnqualifiedType().getAsString().c_str());
+//			  printf("sz: this  is a homogeneous equality/relational op for class type %s\n", Args[0]->getType().getDesugaredType(Context).getUnqualifiedType().getAsString().c_str());
 			  DefineImplicitEqualityOperator(OpLoc, opDecl, Op);
 
 
@@ -11918,7 +11922,7 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
 					  TheCall->getSourceRange(), VariadicDoesNotApply);
 
 				  ExprResult done = MaybeBindToTemporary(TheCall);
-				  printf("sz done\n");
+//				  printf("sz done\n");
 				  return done;
 		  }
 

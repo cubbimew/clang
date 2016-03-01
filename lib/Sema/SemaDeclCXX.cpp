@@ -10053,7 +10053,7 @@ Sema::ComputeDefaultedCopyAssignmentExceptionSpec(CXXMethodDecl *MD) {
 }
 
 FunctionDecl *Sema::DeclareImplicitEqualityOperator(CXXRecordDecl *ClassDecl, OverloadedOperatorKind Op) {
-	printf("sz: declaring the implicit equality operator now...\n");
+//	printf("sz: declaring the implicit equality operator now...\n");
 
 	SmallVector<QualType, 2> ArgTypes;
 	for (int n = 0; n < 2; ++n) {
@@ -10064,7 +10064,7 @@ FunctionDecl *Sema::DeclareImplicitEqualityOperator(CXXRecordDecl *ClassDecl, Ov
 	QualType RetType = Context.BoolTy;
 
 	DeclarationName Name = Context.DeclarationNames.getCXXOperatorName(Op);
-	printf("going to declare '%s' with argtype '%s' and return '%s'\n", Name.getAsString().c_str(), ArgTypes[0].getAsString().c_str(), RetType.getAsString().c_str());
+//	printf("going to declare '%s' with argtype '%s' and return '%s'\n", Name.getAsString().c_str(), ArgTypes[0].getAsString().c_str(), RetType.getAsString().c_str());
 	SourceLocation ClassLoc = ClassDecl->getLocation();
 	DeclarationNameInfo NameInfo(Name, ClassLoc);
 
@@ -10247,7 +10247,7 @@ static void compareMembersRecursive(Sema& S, SourceLocation Loc, CXXRecordDecl* 
 
 
 	for (auto *Field : ClassDecl->fields()) {
-		printf("building comparison for direct member %s\n", Field->getNameAsString().c_str());
+//		printf("building comparison for direct member %s\n", Field->getNameAsString().c_str());
 		//		if (Field->isUnnamedBitfield() || Field->getParent()->isUnion())
 		//			continue;
 		//
@@ -10302,15 +10302,15 @@ static void compareMembersRecursive(Sema& S, SourceLocation Loc, CXXRecordDecl* 
 		// for members of class type...
 		if (const RecordType *RecordTy = Field->getType()->getAs<RecordType>()) {
 			CXXRecordDecl *ClassDecl = cast<CXXRecordDecl>(RecordTy->getDecl());
-			printf("this is a class, looking for appropriate operator==\n");
+//			printf("this is a class, looking for appropriate operator==\n");
 			// Look for operator==
 			DeclarationName Name = S.Context.DeclarationNames.getCXXOperatorName(OO_EqualEqual);
 			LookupResult OpLookup(S, Name, Loc, Sema::LookupOrdinaryName);
 			S.LookupQualifiedName(OpLookup, ClassDecl, false);
 
-			for (const auto& ol : OpLookup) {
-				printf("sz: lookup found op== %s\n", ol->getNameAsString().c_str());
-			}
+//			for (const auto& ol : OpLookup) {
+//				printf("sz: lookup found op== %s\n", ol->getNameAsString().c_str());
+//			}
 
 			//			CXXScopeSpec SS;
 			//			const Type *CanonicalT = Context.getCanonicalType(Field->getType().getTypePtr());
@@ -10337,9 +10337,9 @@ static void compareMembersRecursive(Sema& S, SourceLocation Loc, CXXRecordDecl* 
 			UnresolvedSet<16> Functions;
 			S.LookupOverloadedOperatorName(OO_EqualEqual, nullptr/*TODO: check scope*/,
 				Field->getType(), Field->getType(), Functions);
-			for (const auto& ol : Functions) {
-				printf("sz: LookupOverlaodedOperatorName %s\n", ol->getNameAsString().c_str());
-			}
+//			for (const auto& ol : Functions) {
+//				printf("sz: LookupOverlaodedOperatorName %s\n", ol->getNameAsString().c_str());
+//			}
 
 			ExprResult Comparison = S.CreateOverloadedBinOp(Loc, BO_EQ, Functions,
 				LeftMemberBuilder.build(S, Loc), RightMemberBuilder.build(S, Loc));
@@ -10349,14 +10349,25 @@ static void compareMembersRecursive(Sema& S, SourceLocation Loc, CXXRecordDecl* 
 				UnresolvedSet<16> Functions;
 				S.LookupOverloadedOperatorName(OO_Less, nullptr/*TODO: check scope*/,
 					Field->getType(), Field->getType(), Functions);
-				for (const auto& ol : Functions) {
-					printf("sz: LookupOverlaodedOperatorName %s\n", ol->getNameAsString().c_str());
+//				for (const auto& ol : Functions) {
+//					printf("sz: LookupOverlaodedOperatorName %s\n", ol->getNameAsString().c_str());
+//				}
+				if (Op == OO_Less || Op == OO_LessEqual)
+				{
+					ExprResult LessComparison = S.CreateOverloadedBinOp(Loc, BO_LT, Functions,
+						LeftMemberBuilder.build(S, Loc), RightMemberBuilder.build(S, Loc));
+					// TODO result of < has to be contextually converted to bool
+//					printf("sz: recording overloaded binop less-then in lResults\n");
+					lResults.push_back(LessComparison);
 				}
-				ExprResult LessComparison = S.CreateOverloadedBinOp(Loc, BO_LT, Functions,
-					LeftMemberBuilder.build(S, Loc), RightMemberBuilder.build(S, Loc));
-				// TODO result of < has to be contextually converted to bool
-				printf("sz: recording overloaded binop less-then in lResults\n");
-				lResults.push_back(LessComparison);
+				if (Op == OO_Greater || Op == OO_GreaterEqual)
+				{
+					ExprResult LessComparison = S.CreateOverloadedBinOp(Loc, BO_GT, Functions,
+						LeftMemberBuilder.build(S, Loc), RightMemberBuilder.build(S, Loc));
+					// TODO result of < has to be contextually converted to bool
+//					printf("sz: recording overloaded binop less-then in lResults\n");
+					lResults.push_back(LessComparison);
+				}
 			}
 		}
 		else
@@ -10368,7 +10379,7 @@ static void compareMembersRecursive(Sema& S, SourceLocation Loc, CXXRecordDecl* 
 				{
 					sizes.push_back(ElementTy->getSize());
 					ArrayTy = ElementTy;
-					printf("added size %d\n", ElementTy->getSize().getLimitedValue(INT_MAX));
+//					printf("added size %d\n", ElementTy->getSize().getLimitedValue(INT_MAX));
 				}
 
 				llvm::APInt zero = sizes[0];
@@ -10376,7 +10387,7 @@ static void compareMembersRecursive(Sema& S, SourceLocation Loc, CXXRecordDecl* 
 				llvm::APInt max = std::accumulate(sizes.begin() + 1, sizes.end(), *sizes.begin(), std::multiplies<llvm::APInt>{});
 				//				printf("max value is %d\n", max.getLimitedValue(INT_MAX));
 				for (llvm::APInt offset = zero; offset != max; offset++) {
-					printf("processing array at offset %d\n", offset.getLimitedValue(INT_MAX));
+//					printf("processing array at offset %d\n", offset.getLimitedValue(INT_MAX));
 					{
 						Expr* right = RightMemberBuilder.build(S, Loc);
 						Expr* left = LeftMemberBuilder.build(S, Loc);
@@ -10393,7 +10404,7 @@ static void compareMembersRecursive(Sema& S, SourceLocation Loc, CXXRecordDecl* 
 						ExprResult RightValue = S.CreateBuiltinUnaryOp(Loc, UO_Deref, RightSum.get());
 						ExprResult LeftValue = S.CreateBuiltinUnaryOp(Loc, UO_Deref, LeftSum.get());
 						ExprResult Comparison = S.CreateBuiltinBinOp(Loc, BO_EQ, RightValue.get(), LeftValue.get());
-						printf("sz: adding buildin eq to eresults\n");
+//						printf("sz: adding buildin eq to eresults\n");
 						eResults.push_back(Comparison);
 					}
 					if (Op == OO_Less || Op == OO_LessEqual || Op == OO_Greater || Op == OO_GreaterEqual) {
@@ -10411,8 +10422,8 @@ static void compareMembersRecursive(Sema& S, SourceLocation Loc, CXXRecordDecl* 
 						ExprResult LeftSum = S.CreateBuiltinBinOp(Loc, BO_Add, LeftPtr.get(), IntegerLiteral::Create(S.Context, offset, S.Context.getSizeType(), Loc));
 						ExprResult RightValue = S.CreateBuiltinUnaryOp(Loc, UO_Deref, RightSum.get());
 						ExprResult LeftValue = S.CreateBuiltinUnaryOp(Loc, UO_Deref, LeftSum.get());
-						ExprResult Comparison = S.CreateBuiltinBinOp(Loc, BO_LT, RightValue.get(), LeftValue.get());
-						printf("sz: adding buildin comparison to lresults\n");
+						ExprResult Comparison = S.CreateBuiltinBinOp(Loc, (Op == OO_Less || Op == OO_LessEqual) ? BO_LT : BO_GT, RightValue.get(), LeftValue.get());
+//						printf("sz: adding buildin comparison to lresults\n");
 						lResults.push_back(Comparison);
 					}
 				}
@@ -10437,8 +10448,14 @@ static void compareMembersRecursive(Sema& S, SourceLocation Loc, CXXRecordDecl* 
 				//				if (Comparison.isInvalid())
 				//					return StmtError();
 				eResults.push_back(Comparison);
-				if (Op == OO_Less || Op == OO_LessEqual || Op == OO_Greater || Op == OO_GreaterEqual) {
+				if (Op == OO_Less || Op == OO_LessEqual) {
 					ExprResult Comparison = S.CreateBuiltinBinOp(Loc, BO_LT, LeftMemberBuilder.build(S, Loc), RightMemberBuilder.build(S, Loc));
+					//				if (Comparison.isInvalid())
+					//					return StmtError();
+					lResults.push_back(Comparison);
+				}
+				if (Op == OO_Greater || Op == OO_GreaterEqual) {
+					ExprResult Comparison = S.CreateBuiltinBinOp(Loc, BO_GT, LeftMemberBuilder.build(S, Loc), RightMemberBuilder.build(S, Loc));
 					//				if (Comparison.isInvalid())
 					//					return StmtError();
 					lResults.push_back(Comparison);
@@ -10638,26 +10655,39 @@ void Sema::DefineImplicitEqualityOperator(SourceLocation CurrentLocation, Functi
 	//<
 	//l.a == r.a ? 
 	//    l.b == r.b ?
-	//			l.c < r.c ? true : false
+	//			l.c < r.c
 	//		: l.b < r.b
 	//	: l.a < r.a
 
 	if (Op == OO_Less || Op == OO_LessEqual || Op == OO_Greater || Op == OO_GreaterEqual) {
-		printf("sz: building the relational op, lResults.size() is %zu\n", lResults.size());
-		// last corresponding members, uses less-than as-is
-	 	root = fa;
-		if (lResults.size() > 0) {
-			printf("sz: changing root to a less-than\n");
-			root = *lResults.rbegin();
+//		printf("sz: building the relational op, lResults.size() is %zu\n", lResults.size());
+
+		if (Op == OO_Less || Op == OO_Greater) {
+			// last corresponding members, uses less-than as-is
+			root = fa;
+			if (lResults.size() > 0) {
+//				printf("sz: changing root to a less-than\n");
+				root = *lResults.rbegin();
+				for (int n = lResults.size()-1; n > 0; --n) {
+//					printf("sz: adding a conditional for n == %d\n", n);
+					root = new (Context) ConditionalOperator(
+						eResults[n - 1].get(), Loc,
+						root.get(), Loc,
+						lResults[n - 1].get(), Context.BoolTy, VK_LValue, OK_Ordinary);
+				}
+			}
 		}
-		// 
-		for (int n = lResults.size(); n > 0;  --n) {
-			printf("sz: adding a conditional for n == %d\n", n);
-			root = new (Context) ConditionalOperator(
-				eResults[n-1].get(), Loc,
-				root.get(), Loc,
-				lResults[n-1].get(), Context.BoolTy, VK_LValue, OK_Ordinary);
+		else if (Op == OO_LessEqual || Op == OO_GreaterEqual) {
+			root = tr;
+			for (int n = lResults.size(); n > 0; --n) {
+//				printf("sz: adding a conditional for n == %d\n", n);
+				root = new (Context) ConditionalOperator(
+					eResults[n - 1].get(), Loc,
+					root.get(), Loc,
+					lResults[n - 1].get(), Context.BoolTy, VK_LValue, OK_Ordinary);
+			}
 		}
+
 
 	}
 	//<=
