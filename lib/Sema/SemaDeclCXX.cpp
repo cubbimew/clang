@@ -10644,7 +10644,7 @@ void Sema::DefineImplicitEqualityOperator(SourceLocation CurrentLocation, Functi
 	ExprResult fa = new(Context) CXXBoolLiteralExpr(true, Context.BoolTy, Loc);
 	ExprResult root = tr;
 	if (Op == OO_EqualEqual || Op == OO_ExclaimEqual) {
-		for (int n = 0; n < eResults.size(); ++n) {
+		for (size_t n = 0; n < eResults.size(); ++n) {
 			root = CreateBuiltinBinOp(Loc, BO_LAnd, root.get(), eResults[n].get());
 		}
 		if (Op == OO_ExclaimEqual) {

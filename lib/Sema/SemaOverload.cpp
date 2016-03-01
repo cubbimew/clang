@@ -11860,40 +11860,57 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
       if (Opc == BO_Comma)
         break;
 
-//	  printf("note; candidate set holds...\n");
-//	  for (OverloadCandidate& x : CandidateSet) {
-//		  printf("%s\n", x.FoundDecl.getDecl()->getNameAsString().c_str());
-//	  }
-	  if (CandidateSet.size() == 0 /* TODO only if the signatures are similar? */ && (Opc == BO_EQ || Opc == BO_NE || Opc == BO_LE || Opc == BO_GE || Opc == BO_LT || Opc == BO_GT)) {
-//		  printf("sz: CreateOverloadedBinOp found no viable function, and this is an equality/relational op\n");
-		  if (Args[0]->getType()->isRecordType() && Context.hasSameUnqualifiedType(Args[0]->getType(), Args[1]->getType())) {
-			  //TODO don't redeclare:: if (Class->needsImplicitMoveConstructor())
-				  FunctionDecl *opDecl = DeclareImplicitEqualityOperator(Args[0]->getType()->getAsCXXRecordDecl(), Op); 
-//			  printf("sz: this  is a homogeneous equality/relational op for class type %s\n", Args[0]->getType().getDesugaredType(Context).getUnqualifiedType().getAsString().c_str());
-			  DefineImplicitEqualityOperator(OpLoc, opDecl, Op);
+	  if (Opc == BO_EQ || Opc == BO_NE || Opc == BO_LE || Opc == BO_GE || Opc == BO_LT || Opc == BO_GT) {
+		  bool NoSimilarFunctions = true;
+		  for (OverloadCandidate& x : CandidateSet) {
+			  FunctionDecl* fd = x.Function;			  
+			  if (fd
+				  &&
+				  fd->getDeclName() == Context.DeclarationNames.getCXXOperatorName(Op)
+				  &&
+				  Context.hasSameUnqualifiedType(fd->getParamDecl(0)->getType().getNonReferenceType(), Args[0]->getType().getNonReferenceType())
+				  && // TODO handle a member operator== that is ref-qualified
+				 ( fd->getNumParams() == 1
+					 || Context.hasSameUnqualifiedType(fd->getParamDecl(1)->getType().getNonReferenceType(), Args[0]->getType().getNonReferenceType())
+				  )
+				  )
+			  {
+		//		  printf("found similar function %s\n", fd->getNameAsString().c_str());
+				  NoSimilarFunctions = false;
+				  break;
+			  }
+		  }
+		  if (NoSimilarFunctions) {
+
+			  //		  printf("sz: CreateOverloadedBinOp found no viable function, and this is an equality/relational op\n");
+			  if (Args[0]->getType()->isRecordType() && Context.hasSameUnqualifiedType(Args[0]->getType(), Args[1]->getType())) {
+				  //TODO don't redeclare:: if (Class->needsImplicitMoveConstructor())
+				  FunctionDecl *opDecl = DeclareImplicitEqualityOperator(Args[0]->getType()->getAsCXXRecordDecl(), Op);
+				  //			  printf("sz: this  is a homogeneous equality/relational op for class type %s\n", Args[0]->getType().getDesugaredType(Context).getUnqualifiedType().getAsString().c_str());
+				  DefineImplicitEqualityOperator(OpLoc, opDecl, Op);
 
 
 				  // We matched an overloaded operator. Build a call to that
 				  // operator.
-					  ExprResult Arg0 = PerformCopyInitialization(
+				  ExprResult Arg0 = PerformCopyInitialization(
+					  InitializedEntity::InitializeParameter(Context,
+						  opDecl->getParamDecl(0)),
+					  SourceLocation(), Args[0]);
+				  if (Arg0.isInvalid())
+					  return ExprError();
+
+				  ExprResult Arg1 =
+					  PerformCopyInitialization(
 						  InitializedEntity::InitializeParameter(Context,
-							  opDecl->getParamDecl(0)),
-						  SourceLocation(), Args[0]);
-					  if (Arg0.isInvalid())
-						  return ExprError();
+							  opDecl->getParamDecl(1)),
+						  SourceLocation(), Args[1]);
+				  if (Arg1.isInvalid())
+					  return ExprError();
+				  Args[0] = LHS = Arg0.getAs<Expr>();
+				  Args[1] = RHS = Arg1.getAs<Expr>();
 
-					  ExprResult Arg1 =
-						  PerformCopyInitialization(
-							  InitializedEntity::InitializeParameter(Context,
-								  opDecl->getParamDecl(1)),
-							  SourceLocation(), Args[1]);
-					  if (Arg1.isInvalid())
-						  return ExprError();
-					  Args[0] = LHS = Arg0.getAs<Expr>();
-					  Args[1] = RHS = Arg1.getAs<Expr>();
 
-					  
-					  // Build the actual expression node.
+				  // Build the actual expression node.
 				  ExprResult FnExpr = CreateFunctionRefExpr(*this, opDecl,
 					  opDecl,
 					  false, OpLoc);
@@ -11922,10 +11939,10 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
 					  TheCall->getSourceRange(), VariadicDoesNotApply);
 
 				  ExprResult done = MaybeBindToTemporary(TheCall);
-//				  printf("sz done\n");
+				  //				  printf("sz done\n");
 				  return done;
+			  }
 		  }
-
 	  }
 
       // For class as left operand for assignment or compound assigment
