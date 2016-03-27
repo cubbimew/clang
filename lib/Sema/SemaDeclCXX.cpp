@@ -10300,7 +10300,8 @@ static void compareMembersRecursive(Sema& S, SourceLocation Loc, CXXRecordDecl* 
 		StmtResult SR;
 
 		// for members of class type...
-		if (const RecordType *RecordTy = Field->getType()->getAs<RecordType>()) {
+        QualType Ty = Field->getType()->isReferenceType() ? Field->getType()->getPointeeType() : Field->getType();
+		if (const RecordType *RecordTy = Ty->getAs<RecordType>()) {
 			CXXRecordDecl *ClassDecl = cast<CXXRecordDecl>(RecordTy->getDecl());
 //			printf("this is a class, looking for appropriate operator==\n");
 			// Look for operator==
