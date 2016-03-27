@@ -889,10 +889,12 @@ public:
                          const InitializedEntity &Entity,
                          const InitializationKind &Kind,
                          MultiExprArg Args,
-                         bool TopLevelOfInitList = false);
+                         bool TopLevelOfInitList = false,
+                         bool memberInitializer = false);
   void InitializeFrom(Sema &S, const InitializedEntity &Entity,
                       const InitializationKind &Kind, MultiExprArg Args,
-                      bool TopLevelOfInitList);
+                      bool TopLevelOfInitList,
+                      bool memberInitializer = false);
 
   ~InitializationSequence();
   

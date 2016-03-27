@@ -3291,7 +3291,7 @@ Sema::BuildBaseInitializer(QualType BaseType, TypeSourceInfo *BaseTInfo,
     InitList ? InitializationKind::CreateDirectList(BaseLoc)
              : InitializationKind::CreateDirect(BaseLoc, InitRange.getBegin(),
                                                 InitRange.getEnd());
-  InitializationSequence InitSeq(*this, BaseEntity, Kind, Args);
+  InitializationSequence InitSeq(*this, BaseEntity, Kind, Args, false, /*mem initializer*/true);
   ExprResult BaseInit = InitSeq.Perform(*this, BaseEntity, Kind, Args, nullptr);
   if (BaseInit.isInvalid())
     return true;

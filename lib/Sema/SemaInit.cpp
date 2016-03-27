@@ -3353,7 +3353,8 @@ ResolveConstructorOverload(Sema &S, SourceLocation DeclLoc,
                            DeclContext::lookup_result Ctors,
                            OverloadCandidateSet::iterator &Best,
                            bool CopyInitializing, bool AllowExplicit,
-                           bool OnlyListConstructors, bool IsListInit) {
+                           bool OnlyListConstructors, bool IsListInit,
+                           bool memberInitializer) {
   CandidateSet.clear();
 
   for (NamedDecl *D : Ctors) {
@@ -3409,7 +3410,7 @@ ResolveConstructorOverload(Sema &S, SourceLocation DeclLoc,
         S.AddOverloadCandidate(Constructor, FoundDecl, Args, CandidateSet,
                                SuppressUserConversions,
                                /*PartialOverloading=*/false,
-                               /*AllowExplicit=*/AllowExplicitConv);
+                               /*AllowExplicit=*/AllowExplicitConv, memberInitializer);
       }
     }
   }
@@ -3431,7 +3432,8 @@ static void TryConstructorInitialization(Sema &S,
                                          MultiExprArg Args, QualType DestType,
                                          InitializationSequence &Sequence,
                                          bool IsListInit = false,
-                                         bool IsInitListCopy = false) {
+                                         bool IsInitListCopy = false,
+                                         bool memberInitializer = false) {
   assert((!IsListInit || (Args.size() == 1 && isa<InitListExpr>(Args[0]))) &&
          "IsListInit must come with a single initializer list argument.");
 
@@ -3484,7 +3486,7 @@ static void TryConstructorInitialization(Sema &S,
                                           CandidateSet, Ctors, Best,
                                           CopyInitialization, AllowExplicit,
                                           /*OnlyListConstructor=*/true,
-                                          IsListInit);
+                                          IsListInit, memberInitializer);
 
     // Time to unwrap the init list.
     Args = MultiExprArg(ILE->getInits(), ILE->getNumInits());
@@ -3501,7 +3503,7 @@ static void TryConstructorInitialization(Sema &S,
                                         CandidateSet, Ctors, Best,
                                         CopyInitialization, AllowExplicit,
                                         /*OnlyListConstructors=*/false,
-                                        IsListInit);
+                                        IsListInit, memberInitializer);
   }
   if (Result) {
     Sequence.SetOverloadFailure(IsListInit ?
@@ -4801,9 +4803,10 @@ InitializationSequence::InitializationSequence(Sema &S,
                                                const InitializedEntity &Entity,
                                                const InitializationKind &Kind,
                                                MultiExprArg Args,
-                                               bool TopLevelOfInitList)
+                                               bool TopLevelOfInitList,
+                                               bool memeberInitializer)
     : FailedCandidateSet(Kind.getLocation(), OverloadCandidateSet::CSK_Normal) {
-  InitializeFrom(S, Entity, Kind, Args, TopLevelOfInitList);
+  InitializeFrom(S, Entity, Kind, Args, TopLevelOfInitList, memeberInitializer);
 }
 
 /// Tries to get a FunctionDecl out of `E`. If it succeeds and we can take the
@@ -4821,7 +4824,8 @@ void InitializationSequence::InitializeFrom(Sema &S,
                                             const InitializedEntity &Entity,
                                             const InitializationKind &Kind,
                                             MultiExprArg Args,
-                                            bool TopLevelOfInitList) {
+                                            bool TopLevelOfInitList,
+                                            bool memberInitializer) {
   ASTContext &Context = S.Context;
 
   // Eliminate non-overload placeholder types in the arguments.  We
@@ -5010,7 +5014,7 @@ void InitializationSequence::InitializeFrom(Sema &S,
          (Context.hasSameUnqualifiedType(SourceType, DestType) ||
           S.IsDerivedFrom(Initializer->getLocStart(), SourceType, DestType))))
       TryConstructorInitialization(S, Entity, Kind, Args,
-                                   DestType, *this);
+                                   DestType, *this, false, false, memberInitializer);
     //     - Otherwise (i.e., for the remaining copy-initialization cases),
     //       user-defined conversion sequences that can convert from the source
     //       type to the destination type or (when a conversion function is
