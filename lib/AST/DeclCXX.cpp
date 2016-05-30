@@ -1177,8 +1177,12 @@ static void CollectVisibleConversions(ASTContext &Context,
 /// getVisibleConversionFunctions - get all conversion functions visible
 /// in current class; including conversion function templates.
 llvm::iterator_range<CXXRecordDecl::conversion_iterator>
-CXXRecordDecl::getVisibleConversionFunctions() {
+CXXRecordDecl::getVisibleConversionFunctions(bool IncludeOperatorDot) {
   ASTContext &Ctx = getASTContext();
+
+  if (IncludeOperatorDot) {
+	  printf("sz: including operator dot in getVisibleConversionFunctions");
+  }
 
   ASTUnresolvedSet *Set;
   if (bases_begin() == bases_end()) {

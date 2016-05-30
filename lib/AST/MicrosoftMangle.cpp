@@ -1048,6 +1048,9 @@ void MicrosoftCXXNameMangler::mangleOperatorName(OverloadedOperatorKind OO,
     break;
   }
 
+					   // TODO sz: invented mangling
+  case OO_Dot: Out << "?_W"; break;
+
   case OO_Coawait: {
     DiagnosticsEngine &Diags = Context.getDiags();
     unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,

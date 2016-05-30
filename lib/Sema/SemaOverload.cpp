@@ -4145,7 +4145,7 @@ FindConversionForRefInit(Sema &S, ImplicitConversionSequence &ICS,
   assert(T2->isRecordType() && "Can only find conversions of record types.");
   CXXRecordDecl *T2RecordDecl
     = dyn_cast<CXXRecordDecl>(T2->getAs<RecordType>()->getDecl());
-
+  printf("sz: in FindConversionForRefInit. T2 = %s\n", T2RecordDecl->getNameAsString().c_str());
   OverloadCandidateSet CandidateSet(DeclLoc, OverloadCandidateSet::CSK_Normal);
   const auto &Conversions = T2RecordDecl->getVisibleConversionFunctions();
   for (auto I = Conversions.begin(), E = Conversions.end(); I != E; ++I) {
@@ -4269,7 +4269,7 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
                  bool SuppressUserConversions,
                  bool AllowExplicit) {
   assert(DeclType->isReferenceType() && "Reference init needs a reference");
-
+  printf("sz: top of TryReferenceInit\n");
   // Most paths end in a failed conversion.
   ImplicitConversionSequence ICS;
   ICS.setBad(BadConversionSequence::no_conversion, Init, DeclType);
@@ -4341,6 +4341,7 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
       // derived-to-base conversions is suppressed when we're
       // computing the implicit conversion sequence (C++
       // [over.best.ics]p2).
+	  printf("sz: returning ref-compatible ICS\n");
       return ICS;
     }
 
@@ -4351,6 +4352,7 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
     //          conversion is selected by enumerating the applicable
     //          conversion functions (13.3.1.6) and choosing the best
     //          one through overload resolution (13.3)),
+	printf("sz: before the check that would call FindConversionForRefInit\n");
     if (!SuppressUserConversions && T2->isRecordType() &&
         S.isCompleteType(DeclLoc, T2) &&
         RefRelationship == Sema::Ref_Incompatible) {
@@ -4364,8 +4366,11 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
   //     -- Otherwise, the reference shall be an lvalue reference to a
   //        non-volatile const type (i.e., cv1 shall be const), or the reference
   //        shall be an rvalue reference.
-  if (!isRValRef && (!T1.isConstQualified() || T1.isVolatileQualified()))
-    return ICS;
+  printf("sz: checkpoint 3\n");
+  if (!isRValRef && (!T1.isConstQualified() || T1.isVolatileQualified())) {
+	  printf("sz: returning ICS in checkpoint 3\n");
+	  return ICS;
+  }
 
   //       -- If the initializer expression
   //
@@ -5526,8 +5531,7 @@ ExprResult Sema::PerformContextualImplicitConversion(
       Conversion = cast<CXXConversionDecl>(D);
 
     assert((!ConvTemplate || getLangOpts().CPlusPlus14) &&
-           "Conversion operator templates are considered potentially "
-           "viable in C++1y");
+           "Conversion operator templates are considered potentially viable in C++1y");
 
     QualType CurToType = Conversion->getConversionType().getNonReferenceType();
     if (Converter.match(CurToType) || ConvTemplate) {
@@ -8412,6 +8416,12 @@ void Sema::AddBuiltinOperatorCandidates(OverloadedOperatorKind Op,
     OpBuilder.addSubscriptOverloads();
     break;
 
+	// TODO sz: does this make sense?
+  case OO_Dot:
+	  llvm_unreachable("sz: operator opBuilder.addDotOverloads todo");
+//	  OpBuilder.addDotOverloads();
+    break;
+
   case OO_ArrowStar:
     OpBuilder.addArrowStarOverloads();
     break;
@@ -9316,8 +9326,7 @@ static TemplateDecl *getDescribedTemplate(Decl *Templated) {
   else if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Templated))
     return RD->getDescribedClassTemplate();
 
-  llvm_unreachable("Unsupported: Getting the described template declaration"
-                   " for bad deduction diagnosis");
+  llvm_unreachable("Unsupported: Getting the described template declaration for bad deduction diagnosis");
 }
 
 /// Diagnose a failed template-argument deduction.
@@ -11554,7 +11563,8 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
 
   OverloadedOperatorKind Op = BinaryOperator::getOverloadedOperator(Opc);
   DeclarationName OpName = Context.DeclarationNames.getCXXOperatorName(Op);
-
+  printf("sz: in createoverloaded binop %d LHS = %s RHS is %s\n", Op, Args[0]->getType().getAsString().c_str(),
+	   Args[1]->getType().getAsString().c_str());
   // If either side is type-dependent, create an appropriate dependent
   // expression.
   if (Args[0]->isTypeDependent() || Args[1]->isTypeDependent()) {
@@ -12567,6 +12577,111 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
   return MaybeBindToTemporary(TheCall);
 }
 
+ExprResult
+Sema::BuildOverloadedDotExpr(Scope *S, Expr *Base, SourceLocation OpLoc) {
+	assert(Base->getType()->isRecordType() &&
+		"left-hand side must have class type");
+	printf("sz: in buildoverloaded dot expr\n");
+	SourceLocation Loc = Base->getExprLoc();
+
+	DeclarationName OpName = Context.DeclarationNames.getCXXOperatorName(OO_Dot);
+
+	OverloadCandidateSet CandidateSet(Loc, OverloadCandidateSet::CSK_Operator);
+	const RecordType *BaseRecord = Base->getType()->getAs<RecordType>();
+
+	if (RequireCompleteType(Loc, Base->getType(),
+		diag::err_typecheck_incomplete_tag, Base))
+		return ExprError();
+
+	LookupResult R(*this, OpName, OpLoc, LookupOrdinaryName);
+	LookupQualifiedName(R, BaseRecord->getDecl());
+	R.suppressDiagnostics();
+
+	for (LookupResult::iterator Oper = R.begin(), OperEnd = R.end();
+		Oper != OperEnd; ++Oper) {
+		AddMethodCandidate(Oper.getPair(), Base->getType(), Base->Classify(Context),
+			None, CandidateSet, /*SuppressUserConversions=*/false);
+	}
+
+	bool HadMultipleCandidates = (CandidateSet.size() > 1);
+
+	// Perform overload resolution.
+	OverloadCandidateSet::iterator Best;
+	switch (CandidateSet.BestViableFunction(*this, OpLoc, Best)) {
+	case OR_Success: {
+		printf("sz: overload resolution for %s succeeded\n", OpName.getAsString().c_str());
+		// Overload resolution succeeded; we'll build the call below.
+		break;
+	}
+	case OR_No_Viable_Function:
+		printf("sz: no viable %s \n", OpName.getAsString().c_str());
+		if (CandidateSet.empty()) {
+			QualType BaseType = Base->getType();
+			printf("sz: err_typecheck_member_reference_arrow #3\n");
+//			Diag(OpLoc, diag::err_typecheck_member_reference_arrow)
+//				<< BaseType << Base->getSourceRange();
+//			if (BaseType->isRecordType() && !BaseType->isPointerType()) {
+//				Diag(OpLoc, diag::note_typecheck_member_reference_suggestion)
+//					<< FixItHint::CreateReplacement(OpLoc, ".");
+//			}
+		}
+		else
+			Diag(OpLoc, diag::err_ovl_no_viable_oper)
+			<< "operator->" << Base->getSourceRange();
+//		CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Base);
+		return ExprError();
+
+	case OR_Ambiguous:
+		printf("sz: ambig %s \n", OpName.getAsString().c_str());
+		Diag(OpLoc, diag::err_ovl_ambiguous_oper_unary)
+			<< "->" << Base->getType() << Base->getSourceRange();
+		CandidateSet.NoteCandidates(*this, OCD_ViableCandidates, Base);
+		return ExprError();
+
+	case OR_Deleted:
+		printf("sz: deleted %s \n", OpName.getAsString().c_str());
+		Diag(OpLoc, diag::err_ovl_deleted_oper)
+			<< Best->Function->isDeleted()
+			<< "->"
+			<< getDeletedOrUnavailableSuffix(Best->Function)
+			<< Base->getSourceRange();
+		CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Base);
+		return ExprError();
+	}
+
+	CheckMemberOperatorAccess(OpLoc, Base, nullptr, Best->FoundDecl);
+
+	printf("sz: converting the object parameter \n");
+	// Convert the object parameter.
+	CXXMethodDecl *Method = cast<CXXMethodDecl>(Best->Function);
+	ExprResult BaseResult =
+		PerformObjectArgumentInitialization(Base, /*Qualifier=*/nullptr,
+			Best->FoundDecl, Method);
+	if (BaseResult.isInvalid())
+		return ExprError();
+	Base = BaseResult.get();
+
+	printf("sz: building the operator call \n");
+	// Build the operator call.
+	ExprResult FnExpr = CreateFunctionRefExpr(*this, Method, Best->FoundDecl,
+		HadMultipleCandidates, OpLoc);
+	if (FnExpr.isInvalid())
+		return ExprError();
+
+	QualType ResultTy = Method->getReturnType();
+	ExprValueKind VK = Expr::getValueKindForType(ResultTy);
+	ResultTy = ResultTy.getNonLValueExprType(Context);
+	CXXOperatorCallExpr *TheCall =
+		new (Context) CXXOperatorCallExpr(Context, OO_Dot, FnExpr.get(),
+			Base, ResultTy, VK, OpLoc, false);
+
+	if (CheckCallReturnType(Method->getReturnType(), OpLoc, TheCall, Method))
+		return ExprError();
+
+	return MaybeBindToTemporary(TheCall);
+
+}
+
 /// BuildOverloadedArrowExpr - Build a call to an overloaded @c operator->
 ///  (if one exists), where @c Base is an expression of class type and
 /// @c Member is the name of the member we're trying to find.
@@ -12624,6 +12739,8 @@ Sema::BuildOverloadedArrowExpr(Scope *S, Expr *Base, SourceLocation OpLoc,
         *NoArrowOperatorFound = true;
         return ExprError();
       }
+	  printf("sz: err_typecheck_member_reference_arrow #4\n");
+
       Diag(OpLoc, diag::err_typecheck_member_reference_arrow)
         << BaseType << Base->getSourceRange();
       if (BaseType->isRecordType() && !BaseType->isPointerType()) {

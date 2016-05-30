@@ -251,7 +251,7 @@ Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
                                                GreaterThanIsOperator,
                                                getLangOpts().CPlusPlus11);
   SourceLocation ColonLoc;
-
+  
   while (1) {
     // If this token has a lower precedence than we are allowed to parse (e.g.
     // because we are called recursively, or because the token is not a binop),
@@ -1604,7 +1604,7 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
       // postfix-expression: p-e '.' template[opt] id-expression
       tok::TokenKind OpKind = Tok.getKind();
       SourceLocation OpLoc = ConsumeToken();  // Eat the "." or "->" token.
-
+	  printf("sz: tok or period \n");
       CXXScopeSpec SS;
       ParsedType ObjectType;
       bool MayBePseudoDestructor = false;

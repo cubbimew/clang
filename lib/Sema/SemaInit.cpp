@@ -3635,6 +3635,7 @@ static void TryReferenceListInitialization(Sema &S,
                                        dummy2, dummy3);
     if (RefRelationship >= Sema::Ref_Related) {
       // Try to bind the reference here.
+		printf("sz: TODO in list-init\n");
       TryReferenceInitializationCore(S, Entity, Kind, Initializer, cv1T1, T1,
                                      T1Quals, cv2T2, T2, T2Quals, Sequence);
       if (Sequence)
@@ -3819,7 +3820,7 @@ static OverloadingResult TryRefInitWithConversionFunction(Sema &S,
   QualType T1 = cv1T1.getUnqualifiedType();
   QualType cv2T2 = Initializer->getType();
   QualType T2 = cv2T2.getUnqualifiedType();
-
+  printf("sz: in TryRefInitWithConversion\n");
   bool DerivedToBase;
   bool ObjCConversion;
   bool ObjCLifetimeConversion;
@@ -3878,6 +3879,8 @@ static OverloadingResult TryRefInitWithConversionFunction(Sema &S,
   if (T1RecordType && T1RecordType->getDecl()->isInvalidDecl())
     return OR_No_Viable_Function;
 
+  SourceLocation DeclLoc = Initializer->getLocStart();
+
   const RecordType *T2RecordType = nullptr;
   if ((T2RecordType = T2->getAs<RecordType>()) &&
       S.isCompleteType(Kind.getLocation(), T2)) {
@@ -3885,14 +3888,139 @@ static OverloadingResult TryRefInitWithConversionFunction(Sema &S,
     // functions.
     CXXRecordDecl *T2RecordDecl = cast<CXXRecordDecl>(T2RecordType->getDecl());
 
-    const auto &Conversions = T2RecordDecl->getVisibleConversionFunctions();
+    const auto &Conversions = T2RecordDecl->getVisibleConversionFunctions(true);
+	printf("sz: this is where I should get all visible operator dots within %s to see what can bind to _s\n",
+		T2RecordDecl->getNameAsString().c_str()
+	);// ,
+	{
+		DeclarationName OpName = S.Context.DeclarationNames.getCXXOperatorName(OO_Dot);
+		OverloadCandidateSet CandidateSet(DeclLoc, OverloadCandidateSet::CSK_Operator);
+		Expr *Args[1] = { Initializer };
+		S.AddMemberOperatorCandidates(OO_Dot, DeclLoc, Args, CandidateSet);
+		bool HadMultipleCandidates = (CandidateSet.size() > 1);
+		// Perform overload resolution.
+		OverloadCandidateSet::iterator Best;
+		switch (CandidateSet.BestViableFunction(S, Initializer->getLocStart(), Best)) {
+		case OR_Success: {
+			// We found a built-in operator or an overloaded operator.
+			printf("sz: got OR_Success\n");
+			FunctionDecl *Function = Best->Function;
+			Function->setReferenced();
+//			T2 = Function->getReturnType();
+
+			// Add the user-defined conversion step.
+			bool HadMultipleCandidates = (CandidateSet.size() > 1);
+				
+			printf("sz: going to AddUserConversionStep using %s to %s\n", Best->FoundDecl->getNameAsString().c_str(), T2.getAsString().c_str());
+			/*
+			{
+				// Overload resolution is always an unevaluated context.
+				EnterExpressionEvaluationContext Unevaluated(S, Sema::Unevaluated);
+				// Add this candidate
+				OverloadCandidate &Candidate = CandidateSet.addCandidate(1);
+				Candidate.FoundDecl = Function->getPair();
+				Candidate.Function = Function;
+				Candidate.IsSurrogate = false;
+				Candidate.IgnoreObjectArgument = false;
+				Candidate.FinalConversion.setAsIdentityConversion();
+				Candidate.FinalConversion.setFromType(ConvType);
+				Candidate.FinalConversion.setAllToTypes(ToType);
+				Candidate.Viable = true;
+				Candidate.ExplicitCallArguments = 1;
+			}
+			
+			S.AddConversionCandidate(Function, I.getPair(), ActingDC,
+				Initializer, DestType, CandidateSet,
+				false);
+*/
+			Sequence.AddUserConversionStep(Function, Best->FoundDecl,
+				T2.getNonLValueExprType(S.Context),
+				HadMultipleCandidates);
+
+			printf("sz: going to check for d-to-b or cv-qual\n");
+			// Determine whether we need to perform derived-to-base or
+			// cv-qualification adjustments.
+			ExprValueKind VK = VK_RValue;
+			if (T2->isLValueReferenceType())
+				VK = VK_LValue;
+			else if (const RValueReferenceType *RRef = T2->getAs<RValueReferenceType>())
+				VK = RRef->getPointeeType()->isFunctionType() ? VK_LValue : VK_XValue;
+
+			bool NewDerivedToBase = false;
+			bool NewObjCConversion = false;
+			bool NewObjCLifetimeConversion = false;
+			printf("sz: going to CompareReferenceRelatinoship\n");
+			Sema::ReferenceCompareResult NewRefRelationship
+				= S.CompareReferenceRelationship(DeclLoc, T1,
+					T2.getNonLValueExprType(S.Context),
+					NewDerivedToBase, NewObjCConversion,
+					NewObjCLifetimeConversion);
+			if (NewRefRelationship == Sema::Ref_Incompatible) {
+				// If the type we've converted to is not reference-related to the
+				// type we're looking for, then there is another conversion step
+				// we need to perform to produce a temporary of the right type
+				// that we'll be binding to.
+				printf("sz: refincomp\n");
+				ImplicitConversionSequence ICS;
+				ICS.setStandard();
+				ICS.Standard = Best->FinalConversion;
+				T2 = ICS.Standard.getToType(2);
+				Sequence.AddConversionSequenceStep(ICS, T2);
+			}
+			else if (NewDerivedToBase) {
+				printf("sz: d-to-b\n");
+				Sequence.AddDerivedToBaseCastStep(
+					S.Context.getQualifiedType(T1,
+						T2.getNonReferenceType().getQualifiers()),
+					VK);
+			} 
+			else if (NewObjCConversion) {
+				printf("sz: objc\n");
+				Sequence.AddObjCObjectConversionStep(
+					S.Context.getQualifiedType(T1,
+						T2.getNonReferenceType().getQualifiers()));
+			}
+
+			if (cv1T1.getQualifiers() != T2.getNonReferenceType().getQualifiers()) {
+				printf("sz: going to add qual\n");
+				Sequence.AddQualificationConversionStep(cv1T1, VK);
+			}
+
+			printf("sz: going to add ref binding\n");
+			Sequence.AddReferenceBindingStep(cv1T1, !T2->isReferenceType());
+			printf("sz: going to return out of TryRefInitWithConversionFunction with OR_Success\n");
+			return OR_Success;
+
+			break;
+		}
+		case OR_No_Viable_Function: {
+			printf("sz: got OR_No_Viable_Function\n");
+			break;
+		}
+		case OR_Ambiguous:
+		{
+			printf("sz: got OR_Ambig\n");
+			break;
+		}
+		case OR_Deleted:
+		{
+			printf("sz: got OR_Deleted\n");
+			break;
+		}
+		}
+	}
+	//	cast<CXXRecordDecl>(T1RecordType->getDecl())->getNameAsString().c_str());
+
     for (auto I = Conversions.begin(), E = Conversions.end(); I != E; ++I) {
+
       NamedDecl *D = *I;
       CXXRecordDecl *ActingDC = cast<CXXRecordDecl>(D->getDeclContext());
       if (isa<UsingShadowDecl>(D))
         D = cast<UsingShadowDecl>(D)->getTargetDecl();
 
-      FunctionTemplateDecl *ConvTemplate = dyn_cast<FunctionTemplateDecl>(D);
+	  printf("sz: tring conversion function %s\n", D->getNameAsString().c_str());
+	  
+	  FunctionTemplateDecl *ConvTemplate = dyn_cast<FunctionTemplateDecl>(D);
       CXXConversionDecl *Conv;
       if (ConvTemplate)
         Conv = cast<CXXConversionDecl>(ConvTemplate->getTemplatedDecl());
@@ -3913,17 +4041,19 @@ static OverloadingResult TryRefInitWithConversionFunction(Sema &S,
                                            DestType, CandidateSet,
                                            /*AllowObjCConversionOnExplicit=*/
                                              false);
-        else
-          S.AddConversionCandidate(Conv, I.getPair(), ActingDC,
-                                   Initializer, DestType, CandidateSet,
-                                   /*AllowObjCConversionOnExplicit=*/false);
+		else {
+			printf("sz: adding conversion candidate\n");
+
+			S.AddConversionCandidate(Conv, I.getPair(), ActingDC,
+				Initializer, DestType, CandidateSet,
+				/*AllowObjCConversionOnExplicit=*/false);
+		}
       }
     }
   }
   if (T2RecordType && T2RecordType->getDecl()->isInvalidDecl())
     return OR_No_Viable_Function;
 
-  SourceLocation DeclLoc = Initializer->getLocStart();
 
   // Perform overload resolution. If it fails, return the failed result.
   OverloadCandidateSet::iterator Best;
@@ -4019,6 +4149,7 @@ static void TryReferenceInitialization(Sema &S,
   // Delegate everything else to a subfunction.
   TryReferenceInitializationCore(S, Entity, Kind, Initializer, cv1T1, T1,
                                  T1Quals, cv2T2, T2, T2Quals, Sequence);
+  printf("finished TryTreferenceInitialization\n");
 }
 
 /// Converts the target of reference initialization so that it has the
@@ -4081,6 +4212,8 @@ static void TryReferenceInitializationCore(Sema &S,
                                            QualType cv2T2, QualType T2,
                                            Qualifiers T2Quals,
                                            InitializationSequence &Sequence) {
+	printf("sz: in tryReferenceInitializationCore. T1 = %s T2 = %s\n", T1->getAsCXXRecordDecl()->getNameAsString().c_str(),
+		T2->getAsCXXRecordDecl()->getNameAsString().c_str());
   QualType DestType = Entity.getType();
   SourceLocation DeclLoc = Initializer->getLocStart();
   // Compute some basic properties of the types and the initializer.
@@ -4142,13 +4275,16 @@ static void TryReferenceInitializationCore(Sema &S,
     //       one through overload resolution (13.3)),
     // If we have an rvalue ref to function type here, the rhs must be
     // an rvalue. DR1287 removed the "implicitly" here.
+	printf("sz: ref incompatible?\n");
+
     if (RefRelationship == Sema::Ref_Incompatible && T2->isRecordType() &&
         (isLValueRef || InitCategory.isRValue())) {
       ConvOvlResult = TryRefInitWithConversionFunction(
           S, Entity, Kind, Initializer, /*AllowRValues*/isRValueRef, Sequence);
-      if (ConvOvlResult == OR_Success)
-        return;
-      if (ConvOvlResult != OR_No_Viable_Function)
+	  if (ConvOvlResult == OR_Success) {
+		  printf("sz: going to return out of TryRefInitializationCore with OR_Success\n");
+		  return;
+	  } if (ConvOvlResult != OR_No_Viable_Function)
         Sequence.SetOverloadFailure(
             InitializationSequence::FK_ReferenceInitOverloadFailed,
             ConvOvlResult);
@@ -4258,6 +4394,7 @@ static void TryReferenceInitializationCore(Sema &S,
 
   // FIXME: Why do we use an implicit conversion here rather than trying
   // copy-initialization?
+  printf("sz: going to call TryImplicitConversion?\n");
   ImplicitConversionSequence ICS
     = S.TryImplicitConversion(Initializer, TempEntity.getType(),
                               /*SuppressUserConversions=*/false,
@@ -4889,8 +5026,10 @@ void InitializationSequence::InitializeFrom(Sema &S,
     // (Therefore, multiple arguments are not permitted.)
     if (Args.size() != 1)
       SetFailed(FK_TooManyInitsForReference);
-    else
-      TryReferenceInitialization(S, Entity, Kind, Args[0], *this);
+	else {
+		TryReferenceInitialization(S, Entity, Kind, Args[0], *this);
+		printf("returning out of InitializeFrom\n");
+	}
     return;
   }
 

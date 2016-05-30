@@ -590,6 +590,7 @@ static bool LookupMemberExprInRecord(Sema &SemaRef, LookupResult &R,
                                      TypoExpr *&TE) {
   SourceRange BaseRange = BaseExpr ? BaseExpr->getSourceRange() : SourceRange();
   RecordDecl *RDecl = RTy->getDecl();
+  printf("sz: in LookupMemberExprInRecord where Record = %s isArrow=%d\n", RDecl->getNameAsString().c_str(), IsArrow);
   if (!SemaRef.isThisOutsideMemberFunctionBody(QualType(RTy, 0)) &&
       SemaRef.RequireCompleteType(OpLoc, QualType(RTy, 0),
                                   diag::err_typecheck_incomplete_tag,
@@ -693,7 +694,8 @@ Sema::BuildMemberReferenceExpr(Expr *Base, QualType BaseType,
                                const TemplateArgumentListInfo *TemplateArgs,
                                const Scope *S,
                                ActOnMemberAccessExtraArgs *ExtraArgs) {
-  if (BaseType->isDependentType() ||
+	printf("sz:  top of buildMemberReferenceExpr\n");
+	if (BaseType->isDependentType() ||
       (SS.isSet() && isDependentScopeSpecifier(SS)))
     return ActOnDependentMemberExpr(Base, BaseType,
                                     IsArrow, OpLoc,
@@ -716,6 +718,7 @@ Sema::BuildMemberReferenceExpr(Expr *Base, QualType BaseType,
 
   // Explicit member accesses.
   } else {
+	  printf("sz: explicit member access\n");
     ExprResult BaseResult = Base;
     ExprResult Result = LookupMemberExpr(
         *this, R, BaseResult, IsArrow, OpLoc, SS,
@@ -914,6 +917,7 @@ Sema::BuildMemberReferenceExpr(Expr *BaseExpr, QualType BaseExprType,
                                bool SuppressQualifierCheck,
                                ActOnMemberAccessExtraArgs *ExtraArgs) {
   QualType BaseType = BaseExprType;
+  printf("sz: in BuildMemberReferenceExpr, IsArrow = %d\n", IsArrow);
   if (IsArrow) {
     assert(BaseType->isPointerType());
     BaseType = BaseType->castAs<PointerType>()->getPointeeType();
@@ -1207,7 +1211,7 @@ static ExprResult LookupMemberExpr(Sema &S, LookupResult &R,
                                    SourceLocation OpLoc, CXXScopeSpec &SS,
                                    Decl *ObjCImpDecl, bool HasTemplateArgs) {
   assert(BaseExpr.get() && "no base expression");
-
+  printf("sz: in LookupMember. isArrow = %d \n", IsArrow);
   // Perform default conversions.
   BaseExpr = S.PerformMemberExprBaseConversion(BaseExpr.get(), IsArrow);
   if (BaseExpr.isInvalid())
@@ -1246,7 +1250,8 @@ static ExprResult LookupMemberExpr(Sema &S, LookupResult &R,
     } else if (BaseType->isFunctionType()) {
       goto fail;
     } else {
-      S.Diag(MemberLoc, diag::err_typecheck_member_reference_arrow)
+		printf("sz: err_typecheck_member_reference_arrow #2\n");
+		S.Diag(MemberLoc, diag::err_typecheck_member_reference_arrow)
         << BaseType << BaseExpr.get()->getSourceRange();
       return ExprError();
     }
@@ -1254,6 +1259,8 @@ static ExprResult LookupMemberExpr(Sema &S, LookupResult &R,
 
   // Handle field access to simple records.
   if (const RecordType *RTy = BaseType->getAs<RecordType>()) {
+	  printf("field access to simple record\n");
+
     TypoExpr *TE = nullptr;
     if (LookupMemberExprInRecord(S, R, BaseExpr.get(), RTy,
                                  OpLoc, IsArrow, SS, HasTemplateArgs, TE))
@@ -1638,7 +1645,8 @@ ExprResult Sema::ActOnMemberAccessExpr(Scope *S, Expr *Base,
                                        SourceLocation TemplateKWLoc,
                                        UnqualifiedId &Id,
                                        Decl *ObjCImpDecl) {
-  if (SS.isSet() && SS.isInvalid())
+	printf("sz: top of ActOnMemberAccessExpr\n");
+	if (SS.isSet() && SS.isInvalid())
     return ExprError();
 
   // Warn about the explicit constructor calls Microsoft extension.
@@ -1657,6 +1665,7 @@ ExprResult Sema::ActOnMemberAccessExpr(Scope *S, Expr *Base,
 
   DeclarationName Name = NameInfo.getName();
   bool IsArrow = (OpKind == tok::arrow);
+  printf("sz: top of ActOnMemberAccessExpr: Name = %s isArrow=%d\n", Name.getAsString().c_str(), IsArrow);
 
   NamedDecl *FirstQualifierInScope
     = (!SS.isSet() ? nullptr : FindFirstQualifierInScope(S, SS.getScopeRep()));
@@ -1674,6 +1683,8 @@ ExprResult Sema::ActOnMemberAccessExpr(Scope *S, Expr *Base,
   }
 
   ActOnMemberAccessExtraArgs ExtraArgs = {S, Id, ObjCImpDecl};
+  printf("sz: about to call BuildMmeberReferenceExpr\n");
+
   return BuildMemberReferenceExpr(Base, Base->getType(), OpLoc, IsArrow, SS,
                                   TemplateKWLoc, FirstQualifierInScope,
                                   NameInfo, TemplateArgs, S, &ExtraArgs);

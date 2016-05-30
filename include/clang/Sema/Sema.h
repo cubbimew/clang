@@ -2587,6 +2587,8 @@ public:
                                       SourceLocation OpLoc,
                                       bool *NoArrowOperatorFound = nullptr);
 
+  ExprResult BuildOverloadedDotExpr(Scope *S, Expr *Base, SourceLocation OpLoc);
+
   /// CheckCallReturnType - Checks that a call expression's return type is
   /// complete. Returns true on failure. The location passed in is the location
   /// that best represents the call.

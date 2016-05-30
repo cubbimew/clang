@@ -7821,6 +7821,7 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
   case OO_Arrow:
   case OO_Call:
   case OO_Subscript:
+  case OO_Dot:
   case OO_Conditional:
   case OO_Coawait:
   case NUM_OVERLOADED_OPERATORS:

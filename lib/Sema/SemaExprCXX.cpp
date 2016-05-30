@@ -5651,7 +5651,8 @@ ExprResult Sema::ActOnStartCXXMemberReference(Scope *S, Expr *Base,
                                               tok::TokenKind OpKind,
                                               ParsedType &ObjectType,
                                               bool &MayBePseudoDestructor) {
-  // Since this might be a postfix expression, get rid of ParenListExprs.
+	printf("sz: ActOnStartCXXMemberReference\n");
+	// Since this might be a postfix expression, get rid of ParenListExprs.
   ExprResult Result = MaybeConvertParenListExprToParenExpr(S, Base);
   if (Result.isInvalid()) return ExprError();
   Base = Result.get();
@@ -5716,6 +5717,7 @@ ExprResult Sema::ActOnStartCXXMemberReference(Scope *S, Expr *Base,
             OpKind = tok::period;
             break;
           }
+		  printf("sz: err_typecheck_member_reference_arrow #1\n");
           Diag(OpLoc, diag::err_typecheck_member_reference_arrow)
             << BaseType << Base->getSourceRange();
           CallExpr *CE = dyn_cast<CallExpr>(Base);
@@ -5743,6 +5745,21 @@ ExprResult Sema::ActOnStartCXXMemberReference(Scope *S, Expr *Base,
         (BaseType->isPointerType() || BaseType->isObjCObjectPointerType()))
       BaseType = BaseType->getPointeeType();
   }
+  else if (OpKind == tok::period) {
+	  printf("sz: TODO tok::period in ActOnStartCXXMemberReference\n");
+
+	 ExprResult TempResult = BuildOverloadedDotExpr(S, Base, OpLoc);
+	 if (TempResult.isInvalid()) {
+		  printf("sz: BuildOverloadedDotExpr returned error\n");
+		  // it's not a problem since the current Base might have the rhs member
+	  }
+	  else {
+		  Base = TempResult.get();
+	  }
+	  printf("sz: new Base type is %s\n", Base->getType().getAsString().c_str());
+
+  }
+
 
   // Objective-C properties allow "." access on Objective-C pointer types,
   // so adjust the base type to the object type itself.

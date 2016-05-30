@@ -1759,7 +1759,9 @@ CXXNameMangler::mangleOperatorName(OverloadedOperatorKind OO, unsigned Arity) {
   // Proposal on cxx-abi-dev, 2015-10-21.
   //              ::= aw        # co_await
   case OO_Coawait: Out << "aw"; break;
-
+  // TODO sz: invented mangling scheme
+  case OO_Dot: Out << "dt"; break;
+  
   case OO_None:
   case NUM_OVERLOADED_OPERATORS:
     llvm_unreachable("Not an overloaded operator");

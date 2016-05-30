@@ -2157,13 +2157,18 @@ void Parser::ParseSpecifierQualifierList(DeclSpec &DS, AccessSpecifier AS,
   // Validate declspec for type-name.
   unsigned Specs = DS.getParsedSpecifiers();
   if (isTypeSpecifier(DSC) && !DS.hasTypeSpecifier()) {
+	  printf("sz: ParseDecl.cpp:2160\n");
     Diag(Tok, diag::err_expected_type);
     DS.SetTypeSpecError();
   } else if (Specs == DeclSpec::PQ_None && !DS.hasAttributes()) {
-    Diag(Tok, diag::err_typename_requires_specqual);
-    if (!DS.hasTypeSpecifier())
-      DS.SetTypeSpecError();
+	  printf("sz: ParseDecl.cpp:2164\n");
+	  Diag(Tok, diag::err_typename_requires_specqual);
+	  if (!DS.hasTypeSpecifier()) {
+		  printf("sz: ParseDecl.cpp:2167\n");
+		  DS.SetTypeSpecError();
+	  }
   }
+  printf("sz: ParseDecl.cpp:2171\n");
 
   // Issue diagnostic and remove storage class if present.
   if (Specs & DeclSpec::PQ_StorageClassSpecifier) {
